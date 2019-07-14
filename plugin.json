@@ -6,10 +6,10 @@
   "brand": "Lomas",
   "author": "Guillermo Moreno",
   "authorEmail": "LomasModules@gmail.com",
-  "authorUrl": "",
-  "pluginUrl": "",
+  "authorUrl": "https://github.com/LomasModules",
+  "pluginUrl": "https://github.com/LomasModules/LomasModules",
   "manualUrl": "",
-  "sourceUrl": "",
+  "sourceUrl": "https://github.com/LomasModules/LomasModules",
   "donateUrl": "",
   "modules": [
     {
