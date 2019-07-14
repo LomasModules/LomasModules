@@ -1,0 +1,15 @@
+{
+  "slug": "LomasModules",
+  "name": "LomasModules",
+  "version": "1.0.0",
+  "license": "BSD-3",
+  "brand": "Lomas",
+  "author": "Guillermo Moreno",
+  "authorEmail": "LomasModules@gmail.com",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "",
+  "donateUrl": "",
+  "modules": []
+}
