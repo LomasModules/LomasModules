@@ -6,12 +6,17 @@
 #include "dirent.h"
 #include "FolderReader.hpp"
 
+// TODO
+// Looping
+// Infinite loog decay/no decay
+// Hold
 #define WAVEFORM_RESOLUTION 64
 struct AdvancedSampler : Module
 {
 	enum ParamIds
 	{
 		LOAD_PARAM,
+		LOOP_PARAM,
 		PLAY_PARAM,
 		REC_PARAM,
 		SAMPLE_PARAM,
@@ -194,7 +199,23 @@ struct AdvancedSampler : Module
 
 					// Stop at start or end depending on direction
 					int lastSample = clip_.getSampleCount() * phase_end_;
-					playing_ = reverse ? index_ > lastSample : index_ < lastSample;
+					int fistSample = clip_.getSampleCount() * phase_start_;
+					
+					bool isLastSample = !(reverse ? index_ > lastSample : index_ < lastSample);
+					
+					if (isLastSample)
+					{
+						if (params[LOOP_PARAM].getValue())
+						{
+							index_ = fistSample;
+						}
+						else
+						{
+							playing_ = !isLastSample;
+						}
+					}
+					
+					//playing_ = reverse ? index_ > lastSample : index_ < lastSample;
 
 					// Put sample on SRC buffer
 					in[i].samples[0] = clip_.getSample(index_);
