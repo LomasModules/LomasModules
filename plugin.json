@@ -11,5 +11,22 @@
   "manualUrl": "",
   "sourceUrl": "",
   "donateUrl": "",
-  "modules": []
+  "modules": [
+    {
+      "slug": "AdvancedSampler",
+      "name": "Advanced Sampler",
+      "description": "",
+      "tags": [
+        "Sampler"
+      ]
+    },
+    {
+      "slug": "GateSequencer",
+      "name": "Gate Sequencer",
+      "description": "",
+      "tags": [
+        "Sequencer"
+      ]
+    }
+  ]
 }
