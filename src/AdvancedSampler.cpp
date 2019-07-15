@@ -7,6 +7,7 @@
 #include "FolderReader.hpp"
 
 // TODO
+// Trigger EOC when in loop mode
 // Find loading bug on mac
 // Create a new LoadKnobWidget. Call loading function from there DONE!
 // Looping DONE!
@@ -145,14 +146,15 @@ struct AdvancedSampler : Module
 		phase_end_ = clamp(params[END_PARAM].getValue() + inputs[END_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
 		phase_start_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
 
-		bool was_playing = playing_;
-
 		if (playing_)
 			audioProcess(args);
 
 		// EOC
-		if (was_playing && !playing_)
+		if (eoc_)
+		{
+			eoc_ = false;
 			eoc_pulse_.trigger();
+		}
 
 		outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.f : 0.f);
 	}
@@ -195,6 +197,8 @@ struct AdvancedSampler : Module
 					//looping_ = params[LOOP_PARAM].getValue();
 					if (isLastSample)
 					{
+						eoc_ = true;
+						
 						if (looping_)
 							index_ = fistSample;
 						else
@@ -345,6 +349,7 @@ struct AdvancedSampler : Module
 	bool playing_ = false;
 	bool recording_ = false;
 	bool looping_ = false;
+	bool eoc_ = false;
 	float index_ = 0;
 	float phase_start_ = 0;
 	float phase_end_ = 0;
