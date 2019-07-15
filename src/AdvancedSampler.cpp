@@ -178,7 +178,7 @@ struct AdvancedSampler : Module
 		float attack = clamp(params[ATTACK_PARAM].getValue() + (inputs[ATTACK_INPUT].getVoltage() * .1f), 0.f, 1.f);
 		float decay = clamp(params[DECAY_PARAM].getValue() + (inputs[DECAY_INPUT].getVoltage() * .1f), 0.f, 1.f);
 		float attackLambda = pow(LAMBDA_BASE, -attack) / MIN_TIME;
-		float decayLambda = pow(LAMBDA_BASE, -decay) / MIN_TIME;
+		float decayLambda = decay == 1.0f ? 0.0f : pow(LAMBDA_BASE, -decay) / MIN_TIME;
 		
 		// TODO hold envelope
 		//if (params[ATTACK_HOLD_PARAM].getValue())
