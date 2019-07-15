@@ -75,7 +75,7 @@ struct AdvancedSampler : Module
 
 		// file path
 		json_object_set_new(rootJ, "path", json_string(folder_reader_.fileNames_[fileIndex_].c_str()));
-
+		
 		return rootJ;
 	}
 
@@ -415,8 +415,6 @@ struct DebugDisplay : TransparentWidget
 
 	void draw(const DrawArgs &args) override
 	{
-		std::string text = module ? module->getFilename() : "";
-
 		// Background
 		NVGcolor backgroundColor = nvgRGB(0x18, 0x18, 0x18);
 		NVGcolor borderColor = nvgRGB(0x08, 0x08, 0x08);
@@ -429,55 +427,50 @@ struct DebugDisplay : TransparentWidget
 		nvgStrokeColor(args.vg, borderColor);
 		nvgStroke(args.vg);
 
-		nvgFontSize(args.vg, 10);
+		nvgFontSize(args.vg, 12);
 		nvgFontFaceId(args.vg, font->handle);
 		nvgTextLetterSpacing(args.vg, 1);
 
 		Vec textPos = Vec(4, 9);
 		NVGcolor textColor = nvgRGB(0xaf, 0xd2, 0x2c);
-		//nvgFillColor(args.vg, nvgTransRGBA(textColor, 16));
-		//nvgText(args.vg, textPos.x, textPos.y, "~~~~", NULL);
 		nvgFillColor(args.vg, textColor);
-		nvgText(args.vg, textPos.x, textPos.y, text.c_str(), NULL);
-		
 
 		if (!module)
 			return;
+		
+		// Draw sample name
+		std::string sampleText = module ? module->getFilename() : "";
+		nvgText(args.vg, textPos.x, textPos.y, sampleText.c_str(), NULL);
 
-		std::string loop_text_ = module->looping_ ? "LOOP" : "";
-		nvgText(args.vg, 70, 35, loop_text_.c_str(), NULL);
+		// Draw loop text
+		std::string loop_text_ = "ON";
+		NVGcolor loop_color = module->looping_ ? textColor : nvgTransRGBA(textColor, 16);
+		nvgFillColor(args.vg, loop_color);
+		nvgFontSize(args.vg, 8);
+		nvgText(args.vg, 63, 39, loop_text_.c_str(), NULL);		
+
+		// Draw recording dot
+		NVGcolor redColor = nvgRGB(0xaf, 0x08, 0x08);
+		NVGcolor recordColor = module->recording_ ? redColor : nvgTransRGBA(redColor, 16);
+		nvgBeginPath(args.vg);
+		nvgFillColor(args.vg, recordColor);
+		nvgCircle(args.vg, 99, 5, 3);
+		nvgFill(args.vg);
 		nvgClosePath(args.vg);
-		// Loop symbol / text
-
+		
+		// Draw start/end/play_position lines of waveform
 		const Vec waveform_origin = Vec(2.5f, 22.5f);
 		const float waveform_width = 100; //105; // box.size.x
 		const float waveform_height = 20; // 35.5 // box size.y
 
-		// Rec dot
-		if (module->recording_)
-		{
-			NVGcolor redColor = nvgRGB(0xaf, 0x08, 0x08);
-			nvgBeginPath(args.vg);
-
-			nvgFillColor(args.vg, redColor);
-			nvgCircle(args.vg, 100, 5, 4);
-			nvgFill(args.vg);
-			nvgStroke(args.vg);
-
-			nvgClosePath(args.vg);
-		}
-
-		// Draw lines
-		nvgStrokeColor(args.vg, textColor);
 		nvgBeginPath(args.vg);
-
 		nvgMoveTo(args.vg, waveform_origin.x + module->phase_start_ * waveform_width, waveform_origin.y - 10);
 		nvgLineTo(args.vg, waveform_origin.x + module->phase_start_ * waveform_width, waveform_origin.y + 10);
 		nvgMoveTo(args.vg, waveform_origin.x + module->phase_end_ * waveform_width, waveform_origin.y - 10);
 		nvgLineTo(args.vg, waveform_origin.x + module->phase_end_ * waveform_width, waveform_origin.y + 10);
 		nvgMoveTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y - 10);
 		nvgLineTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y + 10);
-
+		nvgStrokeColor(args.vg, textColor);
 		nvgStroke(args.vg);
 		nvgClosePath(args.vg);
 
@@ -508,11 +501,11 @@ struct AdvancedSamplerWidget : ModuleWidget
 		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<LoadButton>(mm2px(Vec(7.62, 33.129)), module, AdvancedSampler::LOAD_PARAM));
-		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(20.32, 33.129)), module, AdvancedSampler::PLAY_PARAM));
-		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(33.02, 33.129)), module, AdvancedSampler::REC_PARAM));
-		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(26.02, 33.129)), module, AdvancedSampler::LOOP_PARAM));
-
+		addParam(createParamCentered<LoadButton>(mm2px(Vec(5.08,         34.383)), module, AdvancedSampler::LOAD_PARAM));
+		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(15.24, 34.383)), module, AdvancedSampler::PLAY_PARAM));
+		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(25.4,  34.383)), module, AdvancedSampler::LOOP_PARAM));
+		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(35.56, 34.383)), module, AdvancedSampler::REC_PARAM));
+		
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(7.62, 48.187)), module, AdvancedSampler::SAMPLE_PARAM));
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(20.32, 48.187)), module, AdvancedSampler::TUNE_PARAM));
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(33.02, 48.187)), module, AdvancedSampler::ATTACK_PARAM));
@@ -533,12 +526,10 @@ struct AdvancedSamplerWidget : ModuleWidget
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(20.32, 113.441)), module, AdvancedSampler::EOC_OUTPUT));
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(30.48, 113.441)), module, AdvancedSampler::AUDIO_OUTPUT));
 
-		//addChild(createWidgetCentered<Widget>(mm2px(Vec(20.32, 20.078))));
-		//addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(22.86, 110.72)), module, AdvancedSampler::AUDIO_OUTPUT));
 		{
 			DebugDisplay *display = new DebugDisplay();
-			display->box.pos = mm2px(Vec(2.540f, 128.5f - 102.4f - 12.047f));
-			display->box.size = mm2px(Vec(35.560f, 12.022f));
+			display->box.pos = mm2px(Vec(2.540f, 128.5 - 101.646 - 13.803));
+			display->box.size = mm2px(Vec(35.560, 13.803));
 			display->module = module;
 			addChild(display);
 		}
