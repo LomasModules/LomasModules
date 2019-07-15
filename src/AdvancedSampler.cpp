@@ -43,6 +43,7 @@ struct AdvancedSampler : Module
 		PLAY_INPUT,
 		NUM_INPUTS
 	};
+
 	enum OutputIds
 	{
 		EOC_OUTPUT,
@@ -124,24 +125,12 @@ struct AdvancedSampler : Module
 	{
 		// Update UI 1 /60 times per second.
 		if (ui_timer_.process(args.sampleTime) > UI_update_time)
-			updateUI();
+			updateUI(args.sampleRate);
 
 		// Recording start/stop
 		if (inputs[AUDIO_INPUT].isConnected())
-		{
-			
-			bool rec_input = rec_input_trigger_.process(inputs[REC_INPUT].getVoltage());
-			bool rec_button = rec_button_trigger_.process(params[REC_PARAM].getValue());
-			
-			if (rec_input || rec_button)
-			{
-				recording_ = !recording_;
-				if (recording_)
-					startRec(args.sampleRate);
-				else
-					stopRec();
-			}
-		}
+			if (rec_input_trigger_.process(inputs[REC_INPUT].getVoltage()))
+				switchRecState(args.sampleRate);
 
 		if (recording_)
 		{
@@ -166,16 +155,6 @@ struct AdvancedSampler : Module
 				clip_.calculateWaveform(points, WAVEFORM_RESOLUTION);
 			}
 		}
-
-		if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
-			trigger();
-		
-		if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
-			looping_ = !looping_;
-
-		if (inputs[PLAY_INPUT].isConnected())
-			if (input_trigger_.process(inputs[PLAY_INPUT].getVoltage()))
-				trigger();
 
 		// Sample change
 		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
@@ -265,23 +244,50 @@ struct AdvancedSampler : Module
 		}
 	}
 	
-	void updateUI()
+	void updateUI(float sampleRate)
 	{
 		ui_timer_.reset();
 		display_phase_ = index_ / clip_.getSampleCount();
 		// setLedColor(STATUS_LED, 0, 0, clip_.isLoaded(), playing_);
+		
+		// Recording start/stop
+		if (inputs[AUDIO_INPUT].isConnected())
+			if (rec_button_trigger_.process(params[REC_PARAM].getValue()))
+				switchRecState(sampleRate);
 
 		if (recording_) 
 		{
 			clip_.calculateWaveform(points, WAVEFORM_RESOLUTION);
+			return;
 		}
+
+		if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
+			trigger();
+		
+		if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
+			looping_ = !looping_;
+
+		if (inputs[PLAY_INPUT].isConnected())
+			if (input_trigger_.process(inputs[PLAY_INPUT].getVoltage()))
+				trigger();
+				
 	}
 
-	void startRec(unsigned int samplerate)
+	void switchRecState(float sampleRate)
+	{
+		recording_ = !recording_;
+
+		if (recording_)
+			startRec(sampleRate);
+		else
+			stopRec();
+	}
+	
+	void startRec(unsigned int sampleRate)
 	{
 		phase_start_ = 0;
 		phase_end_ = 1;
-		clip_.startRec(samplerate);
+		clip_.startRec(sampleRate);
 		playing_ = false;
 		recording_ = true;
 	}
