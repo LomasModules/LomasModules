@@ -312,12 +312,12 @@ struct AdvancedSampler : Module
 		playing_ = true;
 	}
 
-	void selectSample()
+	void selectSample(bool force_reload = false)
 	{
 		// Sample change
 		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
 		int newFileIndex = sampleParam * folder_reader_.maxFileIndex_;
-		if (newFileIndex != fileIndex_)
+		if (force_reload || newFileIndex != fileIndex_)
 		{
 			fileIndex_ = newFileIndex;
 			clip_.load(folder_reader_.fileNames_[fileIndex_]);
@@ -333,7 +333,8 @@ struct AdvancedSampler : Module
 
 		std::string directory = string::directory(path);
 		folder_reader_.scanDirectory(directory);
-		selectSample();
+		
+		selectSample(true);
 	}
 
 	std::string getFilename()
@@ -413,6 +414,7 @@ struct LoadButton : RubberSmallButton
 	void onDragStart(const event::DragStart &e) override
 	{
 		AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
+		
 		if (module)
 			selectPath(module);
 
@@ -423,17 +425,16 @@ struct LoadButton : RubberSmallButton
 struct LoadKnob : RoundGrayKnob
 {
 	LoadKnob() {}
-
-	void onDragMove(const event::DragMove &e) override
+	
+	void step() override
 	{
 		AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
-		
 		if (module)
 		{
 			selectSample(module);
 		}
 
-		RoundGrayKnob::onDragMove(e);
+		RoundGrayKnob::step();
 	}
 };
 
@@ -540,7 +541,11 @@ struct AdvancedSamplerWidget : ModuleWidget
 		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(25.4,  34.383)), module, AdvancedSampler::LOOP_PARAM));
 		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(35.56, 34.383)), module, AdvancedSampler::REC_PARAM));
 		
-		addParam(createParamCentered<LoadKnob>(mm2px(Vec(7.62, 48.187)), module, AdvancedSampler::SAMPLE_PARAM));
+		if (module)
+			addParam(createParamCentered<LoadKnob>(mm2px(Vec(7.62, 48.187)), module, AdvancedSampler::SAMPLE_PARAM)); // This crashes the module browser
+		else
+			addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(7.62, 48.187)), module, AdvancedSampler::SAMPLE_PARAM));
+
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(20.32, 48.187)), module, AdvancedSampler::TUNE_PARAM));
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(33.02, 48.187)), module, AdvancedSampler::ATTACK_PARAM));
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(7.62, 63.246)), module, AdvancedSampler::START_PARAM));
