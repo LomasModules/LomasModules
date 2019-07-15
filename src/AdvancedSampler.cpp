@@ -7,12 +7,13 @@
 #include "FolderReader.hpp"
 
 // TODO
-// Trigger EOC when in loop mode
-// Find loading bug on mac
-// Create a new LoadKnobWidget. Call loading function from there DONE!
-// Looping DONE!
-// Infinite loog decay/no decay or hold DONE!
 
+// Find loading bug on mac
+
+// DONE Create a new LoadKnobWidget. Call loading function from there
+// DONE Looping
+// DONE Infinite loog decay/no decay or hold
+// DONE Trigger EOC when in loop mode
 
 #define WAVEFORM_RESOLUTION 64
 struct AdvancedSampler : Module
@@ -143,6 +144,10 @@ struct AdvancedSampler : Module
 		if (!clip_.isLoaded())
 			return;
 
+		if (inputs[PLAY_INPUT].isConnected())
+			if (input_trigger_.process(inputs[PLAY_INPUT].getVoltage()))
+				trigger();
+
 		phase_end_ = clamp(params[END_PARAM].getValue() + inputs[END_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
 		phase_start_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
 
@@ -198,14 +203,12 @@ struct AdvancedSampler : Module
 					if (isLastSample)
 					{
 						eoc_ = true;
-						
+
 						if (looping_)
 							index_ = fistSample;
 						else
 							playing_ = false;
 					}
-
-					//playing_ = reverse ? index_ > lastSample : index_ < lastSample;
 
 					// Put sample on SRC buffer
 					in[i].samples[0] = clip_.getSample(index_);
@@ -251,11 +254,6 @@ struct AdvancedSampler : Module
 		
 		if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
 			looping_ = !looping_;
-
-		if (inputs[PLAY_INPUT].isConnected())
-			if (input_trigger_.process(inputs[PLAY_INPUT].getVoltage()))
-				trigger();
-				
 	}
 
 	void switchRecState(float sampleRate)
@@ -434,10 +432,9 @@ struct LoadKnob : RoundGrayKnob
 	void step() override
 	{
 		AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
+		
 		if (module)
-		{
 			selectSample(module);
-		}
 
 		RoundGrayKnob::step();
 	}
