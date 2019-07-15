@@ -73,21 +73,46 @@ struct AdvancedSampler : Module
 	{
 		json_t *rootJ = json_object();
 
-		// file path
+		// File path
 		json_object_set_new(rootJ, "path", json_string(folder_reader_.fileNames_[fileIndex_].c_str()));
 		
+		// Looping
+		json_object_set_new(rootJ, "loop", json_boolean(looping_));
+
+		// Playing
+		json_object_set_new(rootJ, "play", json_boolean(playing_));
+
+		// Index. Prevents playing from sample 0 when reloading patch.
+		json_object_set_new(rootJ, "index", json_integer(index_));
+
 		return rootJ;
 	}
 
 	void dataFromJson(json_t *rootJ) override
 	{
-		// file path
+		// File path
 		json_t *pathJ = json_object_get(rootJ, "path");
 		if (pathJ)
 		{
 			std::string path = json_string_value(pathJ);
 			setPath(path);
 		}
+
+		// Looping
+		json_t *loopJ = json_object_get(rootJ, "loop");
+		if (loopJ)
+			looping_ = json_boolean_value(loopJ);
+
+		// Playing
+		json_t *playJ = json_object_get(rootJ, "play");
+		if (playJ)
+			playing_ = json_boolean_value(playJ);
+		
+		// Index
+		json_t *indexJ = json_object_get(rootJ, "index");
+		if (indexJ)
+			index_ = json_integer_value(indexJ);
+		
 	}
 
 	void onReset() override
