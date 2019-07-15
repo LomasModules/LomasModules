@@ -7,9 +7,11 @@
 #include "FolderReader.hpp"
 
 // TODO
+// Create a new LoadKnobWidget. Call loading function from there
 // Looping
-// Infinite loog decay/no decay
-// Hold
+// Infinite loog decay/no decay or hold
+
+
 #define WAVEFORM_RESOLUTION 64
 struct AdvancedSampler : Module
 {
@@ -201,20 +203,16 @@ struct AdvancedSampler : Module
 					int lastSample = clip_.getSampleCount() * phase_end_;
 					int fistSample = clip_.getSampleCount() * phase_start_;
 					
-					bool isLastSample = !(reverse ? index_ > lastSample : index_ < lastSample);
+					bool isLastSample = reverse ? index_ < lastSample : index_ > lastSample;
 					
 					if (isLastSample)
 					{
 						if (params[LOOP_PARAM].getValue())
-						{
 							index_ = fistSample;
-						}
 						else
-						{
-							playing_ = !isLastSample;
-						}
+							playing_ = false;
 					}
-					
+
 					//playing_ = reverse ? index_ > lastSample : index_ < lastSample;
 
 					// Put sample on SRC buffer
@@ -433,14 +431,16 @@ struct DebugDisplay : TransparentWidget
 
 		Vec textPos = Vec(4, 9);
 		NVGcolor textColor = nvgRGB(0xaf, 0xd2, 0x2c);
-		nvgFillColor(args.vg, nvgTransRGBA(textColor, 16));
-		nvgText(args.vg, textPos.x, textPos.y, "~~~~", NULL);
+		//nvgFillColor(args.vg, nvgTransRGBA(textColor, 16));
+		//nvgText(args.vg, textPos.x, textPos.y, "~~~~", NULL);
 		nvgFillColor(args.vg, textColor);
 		nvgText(args.vg, textPos.x, textPos.y, text.c_str(), NULL);
 		nvgClosePath(args.vg);
 
 		if (!module)
 			return;
+
+		// Loop symbol / text
 
 		const Vec waveform_origin = Vec(2.5f, 22.5f);
 		const float waveform_width = 100; //105; // box.size.x
@@ -459,6 +459,7 @@ struct DebugDisplay : TransparentWidget
 
 			nvgClosePath(args.vg);
 		}
+
 		// Draw lines
 		nvgStrokeColor(args.vg, textColor);
 		nvgBeginPath(args.vg);
