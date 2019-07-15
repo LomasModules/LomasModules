@@ -144,26 +144,6 @@ struct AdvancedSampler : Module
 		phase_end_ = clamp(params[END_PARAM].getValue() + inputs[END_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
 		phase_start_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
 
-		// Wait .3 seconds after the sample is loaded to render the waveform.
-		// Prevents CPU hit when fast modulating loaded sample.
-		// Solution is to cache the the waveforms.
-		if (waveform_render_timer_.process(args.sampleTime) > .3f)
-		{
-			if (!waveformCached_)
-			{
-				waveformCached_ = true;
-				clip_.calculateWaveform(points, WAVEFORM_RESOLUTION);
-			}
-		}
-
-		// Sample change
-		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
-		int newFileIndex = sampleParam * folder_reader_.maxFileIndex_;
-		if (newFileIndex != fileIndex_)
-		{
-			changeSample(newFileIndex);
-		}
-
 		bool was_playing = playing_;
 
 		if (playing_)
@@ -276,33 +256,28 @@ struct AdvancedSampler : Module
 	void switchRecState(float sampleRate)
 	{
 		recording_ = !recording_;
-
 		if (recording_)
-			startRec(sampleRate);
+		{
+			clip_.startRec(sampleRate);
+			phase_start_ = 0;
+			phase_end_ = 1;
+			playing_ = false;
+			recording_ = true;
+		}
 		else
-			stopRec();
-	}
-	
-	void startRec(unsigned int sampleRate)
-	{
-		phase_start_ = 0;
-		phase_end_ = 1;
-		clip_.startRec(sampleRate);
-		playing_ = false;
-		recording_ = true;
+		{
+			clip_.stopRec();
+			recording_ = false;
+			clip_.calculateWaveform(points, WAVEFORM_RESOLUTION);
+			//saveClipToDisk();
+		}
 	}
 
-	void stopRec()
-	{
-		clip_.stopRec();
-		recording_ = false;
-		waveformCached_ = true;
-		clip_.calculateWaveform(points, WAVEFORM_RESOLUTION);
-
-		// save file to disk
-		// Folder stuff is ok.
-		// Creates a correct WAV with garbage audio.
-		/*
+	// save file to disk
+	// Folder stuff is ok.
+	// Creates a correct WAV with garbage audio.
+	void saveClipToDisk()
+	{	
 		float data[clip_.getSampleCount() + 2];
 		clip_.getData(data);
 
@@ -320,10 +295,12 @@ struct AdvancedSampler : Module
 		format.bitsPerSample = 16;
 		drwav* pWav = drwav_open_file_write(path.c_str(), &format);
 		
-		drwav_uint64 samplesWritten = drwav_write(pWav, clip_.getSampleCount(), data);
+		//drwav_uint64 samplesWritten = drwav_write(pWav, clip_.getSampleCount(), data);
 		//drwav_write_raw(pWav, clip_.getSampleCount() + 2, data);
+		drwav_write(pWav, clip_.getSampleCount(), data);
+
 		drwav_close(pWav);
-		*/
+		
 	}
 
 	void trigger()
@@ -334,13 +311,18 @@ struct AdvancedSampler : Module
 		playing_ = true;
 	}
 
-	void changeSample(int fileIndex)
+	void selectSample()
 	{
-		fileIndex_ = fileIndex;
-		clip_.load(folder_reader_.fileNames_[fileIndex_]);
-		waveform_render_timer_.reset();
-		waveformCached_ = false;
-		path_ = folder_reader_.fileNames_[fileIndex_];
+		// Sample change
+		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
+		int newFileIndex = sampleParam * folder_reader_.maxFileIndex_;
+		if (newFileIndex != fileIndex_)
+		{
+			fileIndex_ = newFileIndex;
+			clip_.load(folder_reader_.fileNames_[fileIndex_]);
+			path_ = folder_reader_.fileNames_[fileIndex_];
+			clip_.calculateWaveform(points, WAVEFORM_RESOLUTION);
+		}
 	}
 
 	void setPath(std::string path)
@@ -350,7 +332,7 @@ struct AdvancedSampler : Module
 
 		std::string directory = string::directory(path);
 		folder_reader_.scanDirectory(directory);
-		changeSample(fileIndex_);
+		selectSample();
 	}
 
 	std::string getFilename()
@@ -373,7 +355,6 @@ struct AdvancedSampler : Module
 	int fileIndex_ = 0;
 	std::string path_ = "";
 	FolderReader folder_reader_;
-	dsp::Timer waveform_render_timer_;
 
 	// Sample rate conversion
 	dsp::SampleRateConverter<1> src_;
@@ -383,7 +364,6 @@ struct AdvancedSampler : Module
 	dsp::Timer ui_timer_;
 	float points[WAVEFORM_RESOLUTION] = {0, 0, 0, 0};
 	float display_phase_ = 0;
-	bool waveformCached_ = false;
 	dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
 
 	inline void setLedColor(int ledType, int index, float r, float g, float b)
@@ -417,6 +397,11 @@ static void selectPath(AdvancedSampler *module)
 	}
 }
 
+static void selectSample(AdvancedSampler *module)
+{
+	module->selectSample();
+}
+
 struct LoadButton : RubberSmallButton
 {
 	LoadButton()
@@ -431,6 +416,23 @@ struct LoadButton : RubberSmallButton
 			selectPath(module);
 
 		RubberSmallButton::onDragStart(e);
+	}
+};
+
+struct LoadKnob : RoundGrayKnob
+{
+	LoadKnob() {}
+
+	void onDragMove(const event::DragMove &e) override
+	{
+		AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
+		
+		if (module)
+		{
+			selectSample(module);
+		}
+
+		RoundGrayKnob::onDragMove(e);
 	}
 };
 
@@ -537,7 +539,7 @@ struct AdvancedSamplerWidget : ModuleWidget
 		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(25.4,  34.383)), module, AdvancedSampler::LOOP_PARAM));
 		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(35.56, 34.383)), module, AdvancedSampler::REC_PARAM));
 		
-		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(7.62, 48.187)), module, AdvancedSampler::SAMPLE_PARAM));
+		addParam(createParamCentered<LoadKnob>(mm2px(Vec(7.62, 48.187)), module, AdvancedSampler::SAMPLE_PARAM));
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(20.32, 48.187)), module, AdvancedSampler::TUNE_PARAM));
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(33.02, 48.187)), module, AdvancedSampler::ATTACK_PARAM));
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(7.62, 63.246)), module, AdvancedSampler::START_PARAM));
