@@ -144,6 +144,9 @@ struct AdvancedSampler : Module
 
 		if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
 			trigger();
+		
+		if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
+			looping_ = !looping_;
 
 		if (inputs[PLAY_INPUT].isConnected())
 			if (input_trigger_.process(inputs[PLAY_INPUT].getVoltage()))
@@ -176,7 +179,7 @@ struct AdvancedSampler : Module
 		float decay = clamp(params[DECAY_PARAM].getValue() + (inputs[DECAY_INPUT].getVoltage() * .1f), 0.f, 1.f);
 		float attackLambda = pow(LAMBDA_BASE, -attack) / MIN_TIME;
 		float decayLambda = pow(LAMBDA_BASE, -decay) / MIN_TIME;
-
+		
 		// TODO hold envelope
 		//if (params[ATTACK_HOLD_PARAM].getValue())
 		//	env_.configureHDenvelope(attackLambda, decayLambda); // Hold & Decay
@@ -204,10 +207,10 @@ struct AdvancedSampler : Module
 					int fistSample = clip_.getSampleCount() * phase_start_;
 					
 					bool isLastSample = reverse ? index_ < lastSample : index_ > lastSample;
-					
+					//looping_ = params[LOOP_PARAM].getValue();
 					if (isLastSample)
 					{
-						if (params[LOOP_PARAM].getValue())
+						if (looping_)
 							index_ = fistSample;
 						else
 							playing_ = false;
@@ -326,6 +329,7 @@ struct AdvancedSampler : Module
 
 	bool playing_ = false;
 	bool recording_ = false;
+	bool looping_ = false;
 	float index_ = 0;
 	float phase_start_ = 0;
 	float phase_end_ = 0;
@@ -349,7 +353,7 @@ struct AdvancedSampler : Module
 	float points[WAVEFORM_RESOLUTION] = {0, 0, 0, 0};
 	float display_phase_ = 0;
 	bool waveformCached_ = false;
-	dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_;
+	dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
 
 	inline void setLedColor(int ledType, int index, float r, float g, float b)
 	{
@@ -435,11 +439,14 @@ struct DebugDisplay : TransparentWidget
 		//nvgText(args.vg, textPos.x, textPos.y, "~~~~", NULL);
 		nvgFillColor(args.vg, textColor);
 		nvgText(args.vg, textPos.x, textPos.y, text.c_str(), NULL);
-		nvgClosePath(args.vg);
+		
 
 		if (!module)
 			return;
 
+		std::string loop_text_ = module->looping_ ? "LOOP" : "";
+		nvgText(args.vg, 70, 35, loop_text_.c_str(), NULL);
+		nvgClosePath(args.vg);
 		// Loop symbol / text
 
 		const Vec waveform_origin = Vec(2.5f, 22.5f);
@@ -504,6 +511,7 @@ struct AdvancedSamplerWidget : ModuleWidget
 		addParam(createParamCentered<LoadButton>(mm2px(Vec(7.62, 33.129)), module, AdvancedSampler::LOAD_PARAM));
 		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(20.32, 33.129)), module, AdvancedSampler::PLAY_PARAM));
 		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(33.02, 33.129)), module, AdvancedSampler::REC_PARAM));
+		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(26.02, 33.129)), module, AdvancedSampler::LOOP_PARAM));
 
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(7.62, 48.187)), module, AdvancedSampler::SAMPLE_PARAM));
 		addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(20.32, 48.187)), module, AdvancedSampler::TUNE_PARAM));
