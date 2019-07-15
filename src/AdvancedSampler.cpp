@@ -7,9 +7,10 @@
 #include "FolderReader.hpp"
 
 // TODO
-// Create a new LoadKnobWidget. Call loading function from there
-// Looping
-// Infinite loog decay/no decay or hold
+// Find loading bug on mac
+// Create a new LoadKnobWidget. Call loading function from there DONE!
+// Looping DONE!
+// Infinite loog decay/no decay or hold DONE!
 
 
 #define WAVEFORM_RESOLUTION 64
