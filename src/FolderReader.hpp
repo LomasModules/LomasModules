@@ -22,16 +22,18 @@ struct FolderReader
 				std::string fileName = ent->d_name;
 				if (fileName != ".." && fileName != ".") // Dont add invalid entries.
 				{
-					// Only add wav files
+					// Only add .wav files
 					std::size_t found = fileName.find(".wav", fileName.length() - 5);
+					// and .WAV files
 					if (found == std::string::npos)
 						found = fileName.find(".WAV", fileName.length() - 5);
 
 					if (found != std::string::npos)
 					{
-						fileNames_.push_back(directory + "\\" + fileName);
-						std::string fileNameNoExt = remove_extension(fileName);
-						std::string displayText = short_fileName(fileNameNoExt);
+						std::string path = directory + "/" + fileName;
+						fileNames_.push_back(path);
+						std::string basename = string::filenameBase(string::filename(path)); // no extension
+						std::string displayText = short_fileName(basename);
 						displayNames_.push_back(displayText);
 					}
 				}
@@ -60,14 +62,6 @@ struct FolderReader
 			}
 		}
 		return counter;
-	}
-
-	static std::string remove_extension(const std::string &filename)
-	{
-		size_t lastdot = filename.find_last_of(".");
-		if (lastdot == std::string::npos)
-			return filename;
-		return filename.substr(0, lastdot);
 	}
 
 	static std::string short_fileName(const std::string &filename, int maxCharacters = 13)
