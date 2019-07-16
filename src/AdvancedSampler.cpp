@@ -68,9 +68,12 @@ struct AdvancedSampler : Module
 		configParam(TUNE_PARAM, -24.f, 24.f, 0.f, "Tune", " semitones");
 		configParam(ATTACK_PARAM, 0.0f, 1.f, 0.0f, "Attack", " ms", LAMBDA_BASE);
 		configParam(DECAY_PARAM, 0.0f, 1.f, 1.0f, "Decay", " ms", LAMBDA_BASE);
-		configParam(START_PARAM, 0.0f, 1.f, 0.f, "Start", " %", 0.0f, 100);
-		configParam(END_PARAM, 0.f, 1.f, 1.f, "End", " %", 0.0f, 100);
-		configParam(LOAD_PARAM, 0.f, 1.f, 0.f, "Load");
+		configParam(START_PARAM, 0.0f, 1.f, 0.f, "Start point", " %", 0.0f, 100);
+		configParam(END_PARAM, 0.f, 1.f, 1.f, "End poin", " %", 0.0f, 100);
+		configParam(LOAD_PARAM, 0.f, 1.f, 0.f, "Open folder");
+		configParam(PLAY_PARAM, 0.f, 1.f, 0.f, "Play");
+		configParam(LOOP_PARAM, 0.f, 1.f, 0.f, "Loop");
+		configParam(REC_PARAM, 0.f, 1.f, 0.f, "Record");
 		//configParam(ATTACK_HOLD_PARAM, 0.f, 1.f, 0.f, "Attack / Hold");
 	}
 
@@ -189,19 +192,16 @@ struct AdvancedSampler : Module
 		{
 			dsp::Frame<1> in[24];
 
-			// audio process
+			// Audio process
 			for (int i = 0; i < 24; i++)
 			{
 				in[i].samples[0] = 0;
 				if (playing_)
 				{
-					// update sample positon
-					
-					
+					// Update read positon
 					index_ += reverse ? -freq : freq;
 
 					// Stop at start or end depending on direction
-					
 					bool isLastSample = reverse ? index_ < lastSample : index_ > lastSample;
 
 					if (isLastSample)
@@ -279,9 +279,15 @@ struct AdvancedSampler : Module
 		}
 		else
 		{
-			folder_reader_.audioClips_[clip_index_].stopRec();
 			recording_ = false;
+			folder_reader_.audioClips_[clip_index_].stopRec();
 			folder_reader_.audioClips_[clip_index_].calculateWaveform();
+
+			std::string directory = string::directory(folder_reader_.fileNames_[clip_index_]);
+			int number_of_files = folder_reader_.getFileCountInDirectory(directory);
+			std::string filename = "Record" + std::to_string(number_of_files) + ".wav";
+			std::string path = directory + "/" + filename;
+			folder_reader_.audioClips_[clip_index_].saveToDisk(path);
 			//saveClipToDisk();
 		}
 	}

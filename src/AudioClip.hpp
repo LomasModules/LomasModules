@@ -98,7 +98,7 @@ struct AudioClip
 	// Returns true until max recording time.
 	bool rec(float sample)
 	{
-		left_channel_.push_back(clamp(sample, -0.5f, 0.5f));
+		left_channel_.push_back(clamp(sample, -1.0f, 1.0f));
 		sampleCount_++;
 		if (sampleCount_ >= maxRecordSamples)
 		{
@@ -123,6 +123,33 @@ struct AudioClip
 			data[i] = left_channel_[i];
 	}
 	
+	// save file to disk
+	// Folder stuff is ok.
+	// Creates a correct WAV with garbage audio.
+	void saveToDisk(std::string path)
+	{	
+		int samples = left_channel_.size();
+
+		float data[samples];
+		
+		for (int i = 0; i < samples; i++)
+			data[i] = left_channel_[i];
+	
+		drwav_data_format format;
+
+		format.container = drwav_container_riff;     // <-- drwav_container_riff = normal WAV files, drwav_container_w64 = Sony Wave64.
+		format.format = DR_WAVE_FORMAT_IEEE_FLOAT;          // <-- Any of the DR_WAVE_FORMAT_* codes.
+		format.channels = 1;
+		format.sampleRate = sampleRate_;
+		format.bitsPerSample = 32;
+		drwav* pWav = drwav_open_file_write(path.c_str(), &format);
+		
+		drwav_write(pWav, samples, data);
+
+		drwav_close(pWav);
+		
+	}
+
 	const unsigned int maxRecordSamples = 44100 * 10;
 	float waveform_[WAVEFORM_RESOLUTION] = {0, 0, 0, 0};
 
