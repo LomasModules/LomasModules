@@ -17,7 +17,6 @@
 // DONE Infinite loog decay/no decay or hold
 // DONE Trigger EOC when in loop mode
 
-
 struct AdvancedSampler : Module
 {
 	enum ParamIds
@@ -84,7 +83,7 @@ struct AdvancedSampler : Module
 
 		// File path
 		json_object_set_new(rootJ, "path", json_string(folder_reader_.fileNames_[clip_index_].c_str()));
-		
+
 		// Looping
 		json_object_set_new(rootJ, "loop", json_boolean(looping_));
 
@@ -93,6 +92,9 @@ struct AdvancedSampler : Module
 
 		// Index. Prevents playing from sample 0 when reloading patch.
 		json_object_set_new(rootJ, "index", json_integer(index_));
+		
+		// Interpolation
+		json_object_set_new(rootJ, "interpolation", json_integer(interpolation_mode_index_));
 
 		return rootJ;
 	}
@@ -116,12 +118,16 @@ struct AdvancedSampler : Module
 		json_t *playJ = json_object_get(rootJ, "play");
 		if (playJ)
 			playing_ = json_boolean_value(playJ);
-		
+
 		// Index
 		json_t *indexJ = json_object_get(rootJ, "index");
 		if (indexJ)
 			index_ = json_integer_value(indexJ);
-		
+
+		// Interpolation
+		json_t *interpolationJ = json_object_get(rootJ, "interpolation");
+		if (interpolationJ)
+			interpolation_mode_index_ = json_integer_value(interpolationJ);
 	}
 
 	void onReset() override
@@ -177,7 +183,7 @@ struct AdvancedSampler : Module
 		float decay = clamp(params[DECAY_PARAM].getValue() + (inputs[DECAY_INPUT].getVoltage() * .1f), 0.f, 1.f);
 		float attackLambda = pow(LAMBDA_BASE, -attack) / MIN_TIME;
 		float decayLambda = decay == 1.0f ? 0.0f : pow(LAMBDA_BASE, -decay) / MIN_TIME;
-		
+
 		// TODO hold envelope
 		//if (params[ATTACK_HOLD_PARAM].getValue())
 		//	env_.configureHDenvelope(attackLambda, decayLambda); // Hold & Decay
@@ -217,7 +223,7 @@ struct AdvancedSampler : Module
 					}
 
 					// Put sample on SRC buffer
-					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index_, interpolation_mode);
+					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index_, (Interpolations)interpolation_mode_index_);
 				}
 			}
 
@@ -237,19 +243,19 @@ struct AdvancedSampler : Module
 			outputs[AUDIO_OUTPUT].setVoltage(out);
 		}
 	}
-	
+
 	void updateUI(float sampleRate)
 	{
 		ui_timer_.reset();
 		display_phase_ = index_ / folder_reader_.audioClips_[clip_index_].getSampleCount();
 		// setLedColor(STATUS_LED, 0, 0, folder_reader_.audioClips_[clip_index_].isLoaded(), playing_);
-		
+
 		// Recording start/stop
 		if (inputs[AUDIO_INPUT].isConnected())
 			if (rec_button_trigger_.process(params[REC_PARAM].getValue()))
 				switchRecState(sampleRate);
 
-		if (recording_) 
+		if (recording_)
 		{
 			folder_reader_.audioClips_[clip_index_].calculateWaveform();
 			return;
@@ -257,7 +263,7 @@ struct AdvancedSampler : Module
 
 		if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
 			trigger();
-		
+
 		if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
 			looping_ = !looping_;
 	}
@@ -308,7 +314,7 @@ struct AdvancedSampler : Module
 
 		std::string directory = string::directory(path_);
 		folder_reader_.scanDirectory(directory);
-		
+
 		selectSample();
 	}
 
@@ -323,12 +329,12 @@ struct AdvancedSampler : Module
 		return folder_reader_.displayNames_[clip_index_];
 	}
 
-	float* getClipWaveform()
+	float *getClipWaveform()
 	{
 		return folder_reader_.audioClips_[clip_index_].waveform_;
 	}
-	
-	Interpolations interpolation_mode = BSPLINE;
+
+	int interpolation_mode_index_ = 4;
 	bool playing_ = false;
 	bool recording_ = false;
 	bool looping_ = false;
@@ -395,7 +401,7 @@ struct LoadButton : RubberSmallButton
 	void onDragStart(const event::DragStart &e) override
 	{
 		AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
-		
+
 		if (module)
 			selectPath(module);
 
@@ -406,11 +412,11 @@ struct LoadButton : RubberSmallButton
 struct LoadKnob : RoundGrayKnob
 {
 	LoadKnob() {}
-	
+
 	void step() override
 	{
 		AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
-		
+
 		if (module)
 			module->selectSample();
 
@@ -453,7 +459,7 @@ struct DebugDisplay : TransparentWidget
 
 		if (!module)
 			return;
-		
+
 		// Draw sample name
 		std::string sampleText = module ? module->getClipText() : "";
 		nvgText(args.vg, textPos.x, textPos.y, sampleText.c_str(), NULL);
@@ -463,7 +469,7 @@ struct DebugDisplay : TransparentWidget
 		NVGcolor loop_color = module->looping_ ? textColor : midColor;
 		nvgFillColor(args.vg, loop_color);
 		nvgFontSize(args.vg, 8);
-		nvgText(args.vg, 63, 39, loop_text_.c_str(), NULL);		
+		nvgText(args.vg, 63, 39, loop_text_.c_str(), NULL);
 
 		// Draw recording dot
 		NVGcolor redColor = nvgRGB(0xaf, 0x08, 0x08);
@@ -473,7 +479,7 @@ struct DebugDisplay : TransparentWidget
 		nvgCircle(args.vg, 99, 5, 3);
 		nvgFill(args.vg);
 		nvgClosePath(args.vg);
-		
+
 		// Draw start/end/play_position lines of waveform
 		const Vec waveform_origin = Vec(2.5f, 22.5f);
 		const float waveform_width = 100; //105; // box.size.x
@@ -484,7 +490,8 @@ struct DebugDisplay : TransparentWidget
 		nvgLineTo(args.vg, waveform_origin.x + module->phase_start_ * waveform_width, waveform_origin.y + 10);
 		nvgMoveTo(args.vg, waveform_origin.x + module->phase_end_ * waveform_width, waveform_origin.y - 10);
 		nvgLineTo(args.vg, waveform_origin.x + module->phase_end_ * waveform_width, waveform_origin.y + 10);
-		if (module->playing_) {
+		if (module->playing_)
+		{
 			nvgMoveTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y - 10);
 			nvgLineTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y + 10);
 		}
@@ -495,7 +502,7 @@ struct DebugDisplay : TransparentWidget
 		// Draw waveform
 		nvgBeginPath(args.vg);
 
-		float * points = module->getClipWaveform();
+		float *points = module->getClipWaveform();
 
 		nvgMoveTo(args.vg, waveform_origin.x, waveform_origin.y);
 		for (size_t i = 0; i < WAVEFORM_RESOLUTION; i++)
@@ -504,7 +511,7 @@ struct DebugDisplay : TransparentWidget
 		nvgMoveTo(args.vg, waveform_origin.x, waveform_origin.y);
 		for (size_t i = 0; i < WAVEFORM_RESOLUTION; i++)
 			nvgLineTo(args.vg, waveform_origin.x + i * (waveform_width / WAVEFORM_RESOLUTION), waveform_origin.y - points[i] * waveform_height);
-		
+
 		nvgFillColor(args.vg, midColor);
 		nvgFill(args.vg);
 
@@ -524,11 +531,11 @@ struct AdvancedSamplerWidget : ModuleWidget
 		addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 		addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-		addParam(createParamCentered<LoadButton>(mm2px(Vec(5.08,         34.383)), module, AdvancedSampler::LOAD_PARAM));
+		addParam(createParamCentered<LoadButton>(mm2px(Vec(5.08, 34.383)), module, AdvancedSampler::LOAD_PARAM));
 		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(15.24, 34.383)), module, AdvancedSampler::PLAY_PARAM));
-		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(25.4,  34.383)), module, AdvancedSampler::LOOP_PARAM));
+		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(25.4, 34.383)), module, AdvancedSampler::LOOP_PARAM));
 		addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(35.56, 34.383)), module, AdvancedSampler::REC_PARAM));
-		
+
 		if (module)
 			addParam(createParamCentered<LoadKnob>(mm2px(Vec(7.62, 48.187)), module, AdvancedSampler::SAMPLE_PARAM)); // This crashes the module browser
 		else
@@ -561,6 +568,50 @@ struct AdvancedSamplerWidget : ModuleWidget
 			addChild(display);
 		}
 	}
+
+	void appendContextMenu(Menu *menu) override
+	{
+		AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(this->module);
+
+		struct InterpolationIndexItem : MenuItem
+		{
+			AdvancedSampler *module;
+			int index;
+			void onAction(const event::Action &e) override
+			{
+				module->interpolation_mode_index_ = index;
+			}
+		};
+
+		struct InterpolationItem : MenuItem
+		{
+			AdvancedSampler *module;
+			Menu *createChildMenu() override
+			{
+				Menu *menu = new Menu();
+				const std::string interpolationLabels[] = {
+					"NONE",
+					"LINEAR",
+					"CUBIC",
+					"HERMITE",
+					"BSPLINE"};
+				for (int i = 0; i < (int)LENGTHOF(interpolationLabels); i++)
+				{
+					InterpolationIndexItem *item = createMenuItem<InterpolationIndexItem>(interpolationLabels[i], CHECKMARK(module->interpolation_mode_index_ == i));
+					item->module = module;
+					item->index = i;
+					menu->addChild(item);
+				}
+				return menu;
+			}
+		};
+
+		menu->addChild(new MenuEntry);
+		InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation mode");
+		interpolationItem->module = module;
+		menu->addChild(interpolationItem);
+	}
+	
 };
 
 Model *modelAdvancedSampler = createModel<AdvancedSampler, AdvancedSamplerWidget>("AdvancedSampler");
