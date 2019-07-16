@@ -27,34 +27,6 @@ struct AudioClip
 		return BSpline(left_channel_[x0], left_channel_[x1], left_channel_[x2], left_channel_[x3], t);
 	}
 
-	void load(const std::string &path)
-    {
-		drwav_uint64 totalSampleCount = 0;
-		
-        float *pSampleData = drwav_open_and_read_file_f32(path.c_str(), &channels_, &sampleRate_, &totalSampleCount);
-
-		if (pSampleData == NULL)
-			return;
-
-		left_channel_.clear();
-		
-		// This so we don't have to clamp on interolation samplepos - 1
-		left_channel_.push_back(0);
-
-		for (size_t i = 0; i < totalSampleCount; i += channels_)
-			left_channel_.push_back(pSampleData[i]);
-		
-		sampleCount_ = left_channel_.size();
-
-		// This so we don't have to clamp on interolation samplepos + 2
-		left_channel_.push_back(0);
-		left_channel_.push_back(0);
-
-		drwav_free(pSampleData);
-
-		calculateWaveform();
-    }
-
 	void unLoad()
 	{
 		left_channel_.clear();
@@ -91,8 +63,7 @@ struct AudioClip
 	{
 		sampleRate_ = sampleRate;
 		left_channel_.clear();
-		left_channel_.push_back(0);
-		sampleCount_ = 1;
+		sampleCount_ = 0;
 	}
 
 	// Returns true until max recording time.
@@ -117,15 +88,44 @@ struct AudioClip
 		left_channel_.push_back(0);
 	}
 
-	void getData(float* data)
+	int findCrosZero(int first_sample)
 	{
-		for (size_t i = 0; i < sampleCount_ + 2; i++)
-			data[i] = left_channel_[i];
+		for (unsigned int i = first_sample; i < sampleCount_; i++)
+		{
+			if (left_channel_[i] == 0)
+				return i;
+		}
+		return first_sample;
 	}
-	
-	// save file to disk
-	// Folder stuff is ok.
-	// Creates a correct WAV with garbage audio.
+
+	void load(const std::string &path)
+    {
+		drwav_uint64 totalSampleCount = 0;
+		
+        float *pSampleData = drwav_open_and_read_file_f32(path.c_str(), &channels_, &sampleRate_, &totalSampleCount);
+
+		if (pSampleData == NULL)
+			return;
+
+		left_channel_.clear();
+		
+		// This so we don't have to clamp on interolation samplepos - 1
+		left_channel_.push_back(0);
+
+		for (size_t i = 0; i < totalSampleCount; i += channels_)
+			left_channel_.push_back(pSampleData[i]);
+		
+		sampleCount_ = left_channel_.size();
+
+		// This so we don't have to clamp on interolation samplepos + 2
+		left_channel_.push_back(0);
+		left_channel_.push_back(0);
+
+		drwav_free(pSampleData);
+
+		calculateWaveform();
+    }
+
 	void saveToDisk(std::string path)
 	{	
 		int samples = left_channel_.size();

@@ -163,6 +163,7 @@ struct AdvancedSampler : Module
 		{
 			eoc_ = false;
 			eoc_pulse_.trigger();
+			outputs[AUDIO_OUTPUT].setVoltage(0.0f);
 		}
 
 		outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.f : 0.f);
@@ -275,56 +276,30 @@ struct AdvancedSampler : Module
 			phase_start_ = 0;
 			phase_end_ = 1;
 			playing_ = false;
-			recording_ = true;
 		}
-		else
+		else // !recording
 		{
-			recording_ = false;
 			folder_reader_.audioClips_[clip_index_].stopRec();
 			folder_reader_.audioClips_[clip_index_].calculateWaveform();
 
-			std::string directory = string::directory(folder_reader_.fileNames_[clip_index_]);
-			int number_of_files = folder_reader_.getFileCountInDirectory(directory);
-			std::string filename = "Record" + std::to_string(number_of_files) + ".wav";
-			std::string path = directory + "/" + filename;
-			folder_reader_.audioClips_[clip_index_].saveToDisk(path);
-			//saveClipToDisk();
+			std::string save_path;
+			int number_of_files = 0;
+
+			folder_reader_.getNewSavePath(save_path, number_of_files);
+			folder_reader_.audioClips_[clip_index_].saveToDisk(save_path);
+			folder_reader_.reloadDirectory();
+
+			float file_index = folder_reader_.findFileNameIndex(save_path);
+			float file_count = folder_reader_.getFileCountInDirectory();
+			params[SAMPLE_PARAM].setValue(file_index / file_count);
 		}
-	}
-
-	// save file to disk
-	// Folder stuff is ok.
-	// Creates a correct WAV with garbage audio.
-	void saveClipToDisk()
-	{	
-		float data[folder_reader_.audioClips_[clip_index_].getSampleCount() + 2];
-		folder_reader_.audioClips_[clip_index_].getData(data);
-
-		std::string directory = string::directory(folder_reader_.fileNames_[clip_index_]);
-		int number_of_files = folder_reader_.getFileCountInDirectory(directory);
-		std::string filename = "Record" + std::to_string(number_of_files) + ".wav";
-		std::string path = directory + "\\" + filename;
-
-		drwav_data_format format;
-
-		format.container = drwav_container_riff;     // <-- drwav_container_riff = normal WAV files, drwav_container_w64 = Sony Wave64.
-		format.format = DR_WAVE_FORMAT_PCM;          // <-- Any of the DR_WAVE_FORMAT_* codes.
-		format.channels = 1;
-		format.sampleRate = folder_reader_.audioClips_[clip_index_].getSampleRate();
-		format.bitsPerSample = 16;
-		drwav* pWav = drwav_open_file_write(path.c_str(), &format);
-		
-		drwav_write(pWav, folder_reader_.audioClips_[clip_index_].getSampleCount(), data);
-
-		drwav_close(pWav);
-		
 	}
 
 	void trigger()
 	{
 		env_.tigger();
 		float start_param = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
-		index_ = folder_reader_.audioClips_[clip_index_].getSampleCount() * start_param;
+		index_ = 1 + folder_reader_.audioClips_[clip_index_].getSampleCount() * start_param;
 		playing_ = true;
 	}
 
