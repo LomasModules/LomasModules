@@ -8,6 +8,7 @@
 
 // TODO
 
+// Find bug in 1v/oct.
 // Find loading bug on mac
 
 // DONE Create a new LoadKnobWidget. Call loading function from there
@@ -78,7 +79,7 @@ struct AdvancedSampler : Module
 		json_t *rootJ = json_object();
 
 		// File path
-		json_object_set_new(rootJ, "path", json_string(folder_reader_.fileNames_[fileIndex_].c_str()));
+		json_object_set_new(rootJ, "path", json_string(folder_reader_.fileNames_[clip_index_].c_str()));
 		
 		// Looping
 		json_object_set_new(rootJ, "loop", json_boolean(looping_));
@@ -137,11 +138,11 @@ struct AdvancedSampler : Module
 
 		if (recording_)
 		{
-			recording_ = folder_reader_.audioClips_[fileIndex_].rec(inputs[AUDIO_INPUT].getVoltage() / 10.0f);
+			recording_ = folder_reader_.audioClips_[clip_index_].rec(inputs[AUDIO_INPUT].getVoltage() / 10.0f);
 			return;
 		}
 
-		if (!folder_reader_.audioClips_[fileIndex_].isLoaded())
+		if (!folder_reader_.audioClips_[clip_index_].isLoaded())
 			return;
 
 		if (inputs[PLAY_INPUT].isConnected())
@@ -195,11 +196,11 @@ struct AdvancedSampler : Module
 					index_ += reverse ? -freq : freq;
 
 					// Stop at start or end depending on direction
-					int lastSample = folder_reader_.audioClips_[fileIndex_].getSampleCount() * phase_end_;
-					int fistSample = folder_reader_.audioClips_[fileIndex_].getSampleCount() * phase_start_;
+					int lastSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_end_;
+					int fistSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_start_;
 					
 					bool isLastSample = reverse ? index_ < lastSample : index_ > lastSample;
-					//looping_ = params[LOOP_PARAM].getValue();
+
 					if (isLastSample)
 					{
 						eoc_ = true;
@@ -211,11 +212,11 @@ struct AdvancedSampler : Module
 					}
 
 					// Put sample on SRC buffer
-					in[i].samples[0] = folder_reader_.audioClips_[fileIndex_].getSample(index_);
+					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index_);
 				}
 			}
 
-			src_.setRates(folder_reader_.audioClips_[fileIndex_].getSampleRate(), args.sampleRate);
+			src_.setRates(folder_reader_.audioClips_[clip_index_].getSampleRate(), args.sampleRate);
 
 			int inLen = 24;
 			int outLen = outputBuffer_.capacity();
@@ -235,8 +236,8 @@ struct AdvancedSampler : Module
 	void updateUI(float sampleRate)
 	{
 		ui_timer_.reset();
-		display_phase_ = index_ / folder_reader_.audioClips_[fileIndex_].getSampleCount();
-		// setLedColor(STATUS_LED, 0, 0, folder_reader_.audioClips_[fileIndex_].isLoaded(), playing_);
+		display_phase_ = index_ / folder_reader_.audioClips_[clip_index_].getSampleCount();
+		// setLedColor(STATUS_LED, 0, 0, folder_reader_.audioClips_[clip_index_].isLoaded(), playing_);
 		
 		// Recording start/stop
 		if (inputs[AUDIO_INPUT].isConnected())
@@ -245,7 +246,7 @@ struct AdvancedSampler : Module
 
 		if (recording_) 
 		{
-			folder_reader_.audioClips_[fileIndex_].calculateWaveform();
+			folder_reader_.audioClips_[clip_index_].calculateWaveform();
 			return;
 		}
 
@@ -258,16 +259,8 @@ struct AdvancedSampler : Module
 
 	void selectSample(bool force_reload = false)
 	{
-		// Sample change
 		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
-		int newFileIndex = sampleParam * folder_reader_.maxFileIndex_;
-		if (force_reload || newFileIndex != fileIndex_)
-		{
-			fileIndex_ = newFileIndex;
-			// folder_reader_.audioClips_[fileIndex_].load(folder_reader_.fileNames_[fileIndex_]);
-			// path_ = folder_reader_.fileNames_[fileIndex_];
-			// folder_reader_.audioClips_[fileIndex_].calculateWaveform(points, WAVEFORM_RESOLUTION);
-		}
+		clip_index_ = sampleParam * folder_reader_.maxFileIndex_;
 	}
 
 	void switchRecState(float sampleRate)
@@ -275,7 +268,7 @@ struct AdvancedSampler : Module
 		recording_ = !recording_;
 		if (recording_)
 		{
-			folder_reader_.audioClips_[fileIndex_].startRec(sampleRate);
+			folder_reader_.audioClips_[clip_index_].startRec(sampleRate);
 			phase_start_ = 0;
 			phase_end_ = 1;
 			playing_ = false;
@@ -283,9 +276,9 @@ struct AdvancedSampler : Module
 		}
 		else
 		{
-			folder_reader_.audioClips_[fileIndex_].stopRec();
+			folder_reader_.audioClips_[clip_index_].stopRec();
 			recording_ = false;
-			folder_reader_.audioClips_[fileIndex_].calculateWaveform();
+			folder_reader_.audioClips_[clip_index_].calculateWaveform();
 			//saveClipToDisk();
 		}
 	}
@@ -295,10 +288,10 @@ struct AdvancedSampler : Module
 	// Creates a correct WAV with garbage audio.
 	void saveClipToDisk()
 	{	
-		float data[folder_reader_.audioClips_[fileIndex_].getSampleCount() + 2];
-		folder_reader_.audioClips_[fileIndex_].getData(data);
+		float data[folder_reader_.audioClips_[clip_index_].getSampleCount() + 2];
+		folder_reader_.audioClips_[clip_index_].getData(data);
 
-		std::string directory = string::directory(folder_reader_.fileNames_[fileIndex_]);
+		std::string directory = string::directory(folder_reader_.fileNames_[clip_index_]);
 		int number_of_files = folder_reader_.getFileCountInDirectory(directory);
 		std::string filename = "Record" + std::to_string(number_of_files) + ".wav";
 		std::string path = directory + "\\" + filename;
@@ -308,13 +301,11 @@ struct AdvancedSampler : Module
 		format.container = drwav_container_riff;     // <-- drwav_container_riff = normal WAV files, drwav_container_w64 = Sony Wave64.
 		format.format = DR_WAVE_FORMAT_PCM;          // <-- Any of the DR_WAVE_FORMAT_* codes.
 		format.channels = 1;
-		format.sampleRate = folder_reader_.audioClips_[fileIndex_].getSampleRate();
+		format.sampleRate = folder_reader_.audioClips_[clip_index_].getSampleRate();
 		format.bitsPerSample = 16;
 		drwav* pWav = drwav_open_file_write(path.c_str(), &format);
 		
-		//drwav_uint64 samplesWritten = drwav_write(pWav, folder_reader_.audioClips_[fileIndex_].getSampleCount(), data);
-		//drwav_write_raw(pWav, folder_reader_.audioClips_[fileIndex_].getSampleCount() + 2, data);
-		drwav_write(pWav, folder_reader_.audioClips_[fileIndex_].getSampleCount(), data);
+		drwav_write(pWav, folder_reader_.audioClips_[clip_index_].getSampleCount(), data);
 
 		drwav_close(pWav);
 		
@@ -324,7 +315,7 @@ struct AdvancedSampler : Module
 	{
 		env_.tigger();
 		float start_param = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
-		index_ = folder_reader_.audioClips_[fileIndex_].getSampleCount() * start_param;
+		index_ = folder_reader_.audioClips_[clip_index_].getSampleCount() * start_param;
 		playing_ = true;
 	}
 
@@ -339,19 +330,14 @@ struct AdvancedSampler : Module
 		selectSample(true);
 	}
 
-	std::string getFilename()
+	std::string getClipText()
 	{
-		return folder_reader_.displayNames_[fileIndex_];
-	}
-
-	inline AudioClip getLoadedClip()
-	{
-		return folder_reader_.audioClips_[fileIndex_];
+		return folder_reader_.displayNames_[clip_index_];
 	}
 
 	float* getClipWaveform()
 	{
-		return folder_reader_.audioClips_[fileIndex_].waveform_;
+		return folder_reader_.audioClips_[clip_index_].waveform_;
 	}
 	
 	bool playing_ = false;
@@ -362,12 +348,11 @@ struct AdvancedSampler : Module
 	float phase_start_ = 0;
 	float phase_end_ = 0;
 	LutEnvelope env_;
-	//AudioClip clip_;
 	dsp::PulseGenerator eoc_pulse_;
 	dsp::SchmittTrigger input_trigger_, rec_input_trigger_;
 
 	// Loading
-	int fileIndex_ = 0;
+	int clip_index_ = 0;
 	std::string path_ = "";
 	FolderReader folder_reader_;
 
@@ -485,7 +470,7 @@ struct DebugDisplay : TransparentWidget
 			return;
 		
 		// Draw sample name
-		std::string sampleText = module ? module->getFilename() : "";
+		std::string sampleText = module ? module->getClipText() : "";
 		nvgText(args.vg, textPos.x, textPos.y, sampleText.c_str(), NULL);
 
 		// Draw loop text

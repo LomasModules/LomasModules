@@ -124,7 +124,6 @@ struct AudioClip
 
     private:
 
-	std::string name;
 	std::vector<float> left_channel_;
 	unsigned int sampleCount_ = 0;
 	unsigned int channels_ = 0;

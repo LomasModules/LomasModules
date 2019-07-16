@@ -81,22 +81,19 @@ struct FolderReader
 		return filename.substr(0, characterCount - overSize);
 	}
 
-
 	std::vector<AudioClip> audioClips_;
-
 	std::vector<std::string> fileNames_;
 	std::vector<std::string> displayNames_;
 	int maxFileIndex_ = 0;
 
 	private:
-
+	
 	void loadDirectoryClips()
 	{
 		for (size_t i = 0; i < fileNames_.size(); i++)
 		{
 			AudioClip clip;
 			clip.load(fileNames_[i]);
-			//clip.calculateWaveform();
 			audioClips_.push_back(clip);
 		}
 	}
