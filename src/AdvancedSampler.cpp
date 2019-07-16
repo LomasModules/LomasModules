@@ -178,11 +178,11 @@ struct AdvancedSampler : Module
 		//	env_.configureHDenvelope(attackLambda, decayLambda); // Hold & Decay
 		//else
 		env_.configureADenvelope(attackLambda, decayLambda); // Attack & Decay
-		
+
 		bool reverse = phase_start_ > phase_end_;
 		int lastSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_end_;
 		int fistSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_start_;
-		float freq = std::pow(2, (params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 12));
+		float freq = std::pow(2, (params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 12) / 12.0f);
 
 		// Sample rate conversion
 		if (outputBuffer_.empty())
@@ -196,9 +196,12 @@ struct AdvancedSampler : Module
 				if (playing_)
 				{
 					// update sample positon
+					
+					
 					index_ += reverse ? -freq : freq;
 
 					// Stop at start or end depending on direction
+					
 					bool isLastSample = reverse ? index_ < lastSample : index_ > lastSample;
 
 					if (isLastSample)

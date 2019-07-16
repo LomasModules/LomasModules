@@ -12,7 +12,7 @@ struct AudioClip
 	
 	unsigned int getSampleRate() { return sampleRate_; }
 
-	bool isLoaded() { return sampleCount_ > 10; }
+	bool isLoaded() { return sampleCount_ > 0; }
 
 	float getSeconds() { return (float)sampleCount_ / (float)sampleRate_; }
 	
@@ -64,6 +64,10 @@ struct AudioClip
 
 	void calculateWaveform()
 	{
+		// Crashesh rack when recording.
+		if (sampleCount_< 4410)
+			return;
+
 		int samplesPerSlice = sampleCount_ / WAVEFORM_RESOLUTION;
 		int slice = 0;
 		float acumulator = 0;
