@@ -1,7 +1,10 @@
+#include "AudioClip.hpp"
+
 struct FolderReader
 {
 	FolderReader()
 	{
+		audioClips_.push_back(AudioClip());
 		displayNames_.push_back("No sample");
 		fileNames_.push_back("");
 	}
@@ -13,6 +16,7 @@ struct FolderReader
 		// ..
 		DIR *dir;
 		struct dirent *ent;
+		audioClips_.clear();
 		fileNames_.clear();
 		displayNames_.clear();
 		if ((dir = opendir(directory.c_str())) != NULL)
@@ -31,6 +35,7 @@ struct FolderReader
 					if (found != std::string::npos)
 					{
 						std::string path = directory + "/" + fileName;
+
 						fileNames_.push_back(path);
 						std::string basename = string::filenameBase(string::filename(path)); // no extension
 						std::string displayText = short_fileName(basename);
@@ -40,6 +45,7 @@ struct FolderReader
 			}
 		}
 		maxFileIndex_ = fileNames_.size() - 1;
+		loadDirectoryClips();
 	}
 
 	static int getFileCountInDirectory(std::string directory)
@@ -75,7 +81,25 @@ struct FolderReader
 		return filename.substr(0, characterCount - overSize);
 	}
 
+
+	std::vector<AudioClip> audioClips_;
+
 	std::vector<std::string> fileNames_;
 	std::vector<std::string> displayNames_;
 	int maxFileIndex_ = 0;
+
+	private:
+
+	void loadDirectoryClips()
+	{
+		for (size_t i = 0; i < fileNames_.size(); i++)
+		{
+			AudioClip clip;
+			clip.load(fileNames_[i]);
+			//clip.calculateWaveform();
+			audioClips_.push_back(clip);
+		}
+	}
+
+
 };

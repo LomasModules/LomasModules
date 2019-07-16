@@ -1,12 +1,6 @@
-#define DR_WAV_IMPLEMENTATION
 #include "dep/dr_wav/dr_wav.h"
-
 #include "Interpolation.hpp"
-
-#include <rack.hpp>
-
-
-using namespace rack;
+#define WAVEFORM_RESOLUTION 64
 
 struct AudioClip
 {
@@ -57,6 +51,8 @@ struct AudioClip
 		left_channel_.push_back(0);
 
 		drwav_free(pSampleData);
+
+		calculateWaveform();
     }
 
 	void unLoad()
@@ -66,9 +62,9 @@ struct AudioClip
 		sampleCount_ = 0;
 	}
 
-	void calculateWaveform(float* points, int arraylen)
+	void calculateWaveform()
 	{
-		int samplesPerSlice = sampleCount_ / arraylen;
+		int samplesPerSlice = sampleCount_ / WAVEFORM_RESOLUTION;
 		int slice = 0;
 		float acumulator = 0;
 		int counter = 0;
@@ -78,13 +74,13 @@ struct AudioClip
 			acumulator = acumulator + abs(left_channel_[i]);
 			if (counter >= samplesPerSlice)
 			{
-				points[slice] = acumulator / samplesPerSlice;
+				waveform_[slice] = acumulator / samplesPerSlice;
 				counter = 0;
 				acumulator = 0;
 				slice++;
 			}
 		}
-		points[arraylen - 1] = 0;
+		waveform_[WAVEFORM_RESOLUTION - 1] = 0;
 	}
 
 	void startRec(unsigned int sampleRate)
@@ -124,9 +120,11 @@ struct AudioClip
 	}
 	
 	const unsigned int maxRecordSamples = 44100 * 10;
+	float waveform_[WAVEFORM_RESOLUTION] = {0, 0, 0, 0};
 
     private:
 
+	std::string name;
 	std::vector<float> left_channel_;
 	unsigned int sampleCount_ = 0;
 	unsigned int channels_ = 0;

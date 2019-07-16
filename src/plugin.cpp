@@ -1,6 +1,5 @@
 #include "plugin.hpp"
 
-
 Plugin *pluginInstance;
 
 

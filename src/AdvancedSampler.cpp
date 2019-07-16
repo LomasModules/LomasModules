@@ -1,7 +1,7 @@
 #include "plugin.hpp"
 #include "components.hpp"
 #include "LutEnvelope.hpp"
-#include "AudioClip.hpp"
+//#include "AudioClip.hpp"
 #include "osdialog.h"
 #include "dirent.h"
 #include "FolderReader.hpp"
@@ -15,7 +15,7 @@
 // DONE Infinite loog decay/no decay or hold
 // DONE Trigger EOC when in loop mode
 
-#define WAVEFORM_RESOLUTION 64
+
 struct AdvancedSampler : Module
 {
 	enum ParamIds
@@ -137,11 +137,11 @@ struct AdvancedSampler : Module
 
 		if (recording_)
 		{
-			recording_ = clip_.rec(inputs[AUDIO_INPUT].getVoltage() / 10.0f);
+			recording_ = folder_reader_.audioClips_[fileIndex_].rec(inputs[AUDIO_INPUT].getVoltage() / 10.0f);
 			return;
 		}
 
-		if (!clip_.isLoaded())
+		if (!folder_reader_.audioClips_[fileIndex_].isLoaded())
 			return;
 
 		if (inputs[PLAY_INPUT].isConnected())
@@ -195,8 +195,8 @@ struct AdvancedSampler : Module
 					index_ += reverse ? -freq : freq;
 
 					// Stop at start or end depending on direction
-					int lastSample = clip_.getSampleCount() * phase_end_;
-					int fistSample = clip_.getSampleCount() * phase_start_;
+					int lastSample = folder_reader_.audioClips_[fileIndex_].getSampleCount() * phase_end_;
+					int fistSample = folder_reader_.audioClips_[fileIndex_].getSampleCount() * phase_start_;
 					
 					bool isLastSample = reverse ? index_ < lastSample : index_ > lastSample;
 					//looping_ = params[LOOP_PARAM].getValue();
@@ -211,11 +211,11 @@ struct AdvancedSampler : Module
 					}
 
 					// Put sample on SRC buffer
-					in[i].samples[0] = clip_.getSample(index_);
+					in[i].samples[0] = folder_reader_.audioClips_[fileIndex_].getSample(index_);
 				}
 			}
 
-			src_.setRates(clip_.getSampleRate(), args.sampleRate);
+			src_.setRates(folder_reader_.audioClips_[fileIndex_].getSampleRate(), args.sampleRate);
 
 			int inLen = 24;
 			int outLen = outputBuffer_.capacity();
@@ -235,8 +235,8 @@ struct AdvancedSampler : Module
 	void updateUI(float sampleRate)
 	{
 		ui_timer_.reset();
-		display_phase_ = index_ / clip_.getSampleCount();
-		// setLedColor(STATUS_LED, 0, 0, clip_.isLoaded(), playing_);
+		display_phase_ = index_ / folder_reader_.audioClips_[fileIndex_].getSampleCount();
+		// setLedColor(STATUS_LED, 0, 0, folder_reader_.audioClips_[fileIndex_].isLoaded(), playing_);
 		
 		// Recording start/stop
 		if (inputs[AUDIO_INPUT].isConnected())
@@ -245,7 +245,7 @@ struct AdvancedSampler : Module
 
 		if (recording_) 
 		{
-			clip_.calculateWaveform(points, WAVEFORM_RESOLUTION);
+			folder_reader_.audioClips_[fileIndex_].calculateWaveform();
 			return;
 		}
 
@@ -256,12 +256,26 @@ struct AdvancedSampler : Module
 			looping_ = !looping_;
 	}
 
+	void selectSample(bool force_reload = false)
+	{
+		// Sample change
+		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
+		int newFileIndex = sampleParam * folder_reader_.maxFileIndex_;
+		if (force_reload || newFileIndex != fileIndex_)
+		{
+			fileIndex_ = newFileIndex;
+			// folder_reader_.audioClips_[fileIndex_].load(folder_reader_.fileNames_[fileIndex_]);
+			// path_ = folder_reader_.fileNames_[fileIndex_];
+			// folder_reader_.audioClips_[fileIndex_].calculateWaveform(points, WAVEFORM_RESOLUTION);
+		}
+	}
+
 	void switchRecState(float sampleRate)
 	{
 		recording_ = !recording_;
 		if (recording_)
 		{
-			clip_.startRec(sampleRate);
+			folder_reader_.audioClips_[fileIndex_].startRec(sampleRate);
 			phase_start_ = 0;
 			phase_end_ = 1;
 			playing_ = false;
@@ -269,9 +283,9 @@ struct AdvancedSampler : Module
 		}
 		else
 		{
-			clip_.stopRec();
+			folder_reader_.audioClips_[fileIndex_].stopRec();
 			recording_ = false;
-			clip_.calculateWaveform(points, WAVEFORM_RESOLUTION);
+			folder_reader_.audioClips_[fileIndex_].calculateWaveform();
 			//saveClipToDisk();
 		}
 	}
@@ -281,8 +295,8 @@ struct AdvancedSampler : Module
 	// Creates a correct WAV with garbage audio.
 	void saveClipToDisk()
 	{	
-		float data[clip_.getSampleCount() + 2];
-		clip_.getData(data);
+		float data[folder_reader_.audioClips_[fileIndex_].getSampleCount() + 2];
+		folder_reader_.audioClips_[fileIndex_].getData(data);
 
 		std::string directory = string::directory(folder_reader_.fileNames_[fileIndex_]);
 		int number_of_files = folder_reader_.getFileCountInDirectory(directory);
@@ -294,13 +308,13 @@ struct AdvancedSampler : Module
 		format.container = drwav_container_riff;     // <-- drwav_container_riff = normal WAV files, drwav_container_w64 = Sony Wave64.
 		format.format = DR_WAVE_FORMAT_PCM;          // <-- Any of the DR_WAVE_FORMAT_* codes.
 		format.channels = 1;
-		format.sampleRate = clip_.getSampleRate();
+		format.sampleRate = folder_reader_.audioClips_[fileIndex_].getSampleRate();
 		format.bitsPerSample = 16;
 		drwav* pWav = drwav_open_file_write(path.c_str(), &format);
 		
-		//drwav_uint64 samplesWritten = drwav_write(pWav, clip_.getSampleCount(), data);
-		//drwav_write_raw(pWav, clip_.getSampleCount() + 2, data);
-		drwav_write(pWav, clip_.getSampleCount(), data);
+		//drwav_uint64 samplesWritten = drwav_write(pWav, folder_reader_.audioClips_[fileIndex_].getSampleCount(), data);
+		//drwav_write_raw(pWav, folder_reader_.audioClips_[fileIndex_].getSampleCount() + 2, data);
+		drwav_write(pWav, folder_reader_.audioClips_[fileIndex_].getSampleCount(), data);
 
 		drwav_close(pWav);
 		
@@ -310,22 +324,8 @@ struct AdvancedSampler : Module
 	{
 		env_.tigger();
 		float start_param = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
-		index_ = clip_.getSampleCount() * start_param;
+		index_ = folder_reader_.audioClips_[fileIndex_].getSampleCount() * start_param;
 		playing_ = true;
-	}
-
-	void selectSample(bool force_reload = false)
-	{
-		// Sample change
-		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
-		int newFileIndex = sampleParam * folder_reader_.maxFileIndex_;
-		if (force_reload || newFileIndex != fileIndex_)
-		{
-			fileIndex_ = newFileIndex;
-			clip_.load(folder_reader_.fileNames_[fileIndex_]);
-			path_ = folder_reader_.fileNames_[fileIndex_];
-			clip_.calculateWaveform(points, WAVEFORM_RESOLUTION);
-		}
 	}
 
 	void setPath(std::string path)
@@ -344,6 +344,16 @@ struct AdvancedSampler : Module
 		return folder_reader_.displayNames_[fileIndex_];
 	}
 
+	inline AudioClip getLoadedClip()
+	{
+		return folder_reader_.audioClips_[fileIndex_];
+	}
+
+	float* getClipWaveform()
+	{
+		return folder_reader_.audioClips_[fileIndex_].waveform_;
+	}
+	
 	bool playing_ = false;
 	bool recording_ = false;
 	bool looping_ = false;
@@ -352,7 +362,7 @@ struct AdvancedSampler : Module
 	float phase_start_ = 0;
 	float phase_end_ = 0;
 	LutEnvelope env_;
-	AudioClip clip_;
+	//AudioClip clip_;
 	dsp::PulseGenerator eoc_pulse_;
 	dsp::SchmittTrigger input_trigger_, rec_input_trigger_;
 
@@ -367,7 +377,6 @@ struct AdvancedSampler : Module
 
 	// UI
 	dsp::Timer ui_timer_;
-	float points[WAVEFORM_RESOLUTION] = {0, 0, 0, 0};
 	float display_phase_ = 0;
 	dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
 
@@ -514,13 +523,15 @@ struct DebugDisplay : TransparentWidget
 		// Draw waveform
 		nvgBeginPath(args.vg);
 
-		nvgMoveTo(args.vg, waveform_origin.x, waveform_origin.y);
-		for (size_t i = 0; i < WAVEFORM_RESOLUTION; i++)
-			nvgLineTo(args.vg, waveform_origin.x + i * (waveform_width / WAVEFORM_RESOLUTION), waveform_origin.y + module->points[i] * waveform_height);
+		float * points = module->getClipWaveform();
 
 		nvgMoveTo(args.vg, waveform_origin.x, waveform_origin.y);
 		for (size_t i = 0; i < WAVEFORM_RESOLUTION; i++)
-			nvgLineTo(args.vg, waveform_origin.x + i * (waveform_width / WAVEFORM_RESOLUTION), waveform_origin.y - module->points[i] * waveform_height);
+			nvgLineTo(args.vg, waveform_origin.x + i * (waveform_width / WAVEFORM_RESOLUTION), waveform_origin.y + points[i] * waveform_height);
+
+		nvgMoveTo(args.vg, waveform_origin.x, waveform_origin.y);
+		for (size_t i = 0; i < WAVEFORM_RESOLUTION; i++)
+			nvgLineTo(args.vg, waveform_origin.x + i * (waveform_width / WAVEFORM_RESOLUTION), waveform_origin.y - points[i] * waveform_height);
 
 		nvgStroke(args.vg);
 	}
