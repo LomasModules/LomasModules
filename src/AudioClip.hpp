@@ -86,6 +86,8 @@ struct AudioClip
 		// This so we don't have to clamp on interolation samplepos + 2
 		left_channel_.push_back(0);
 		left_channel_.push_back(0);
+
+		calculateWaveform();
 	}
 
 	int findCrosZero(int first_sample)

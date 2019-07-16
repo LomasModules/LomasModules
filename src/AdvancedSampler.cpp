@@ -280,7 +280,6 @@ struct AdvancedSampler : Module
 		else // !recording
 		{
 			folder_reader_.audioClips_[clip_index_].stopRec();
-			folder_reader_.audioClips_[clip_index_].calculateWaveform();
 
 			std::string save_path;
 			int number_of_files = 0;
@@ -290,8 +289,10 @@ struct AdvancedSampler : Module
 			folder_reader_.reloadDirectory();
 
 			float file_index = folder_reader_.findFileNameIndex(save_path);
-			float file_count = folder_reader_.getFileCountInDirectory();
-			params[SAMPLE_PARAM].setValue(file_index / file_count);
+			float sampleParam = file_index / folder_reader_.maxFileIndex_;
+
+			params[SAMPLE_PARAM].setValue(sampleParam);
+			clip_index_ = file_index;
 		}
 	}
 
@@ -308,7 +309,9 @@ struct AdvancedSampler : Module
 		if (path == "")
 			return;
 
-		std::string directory = string::directory(path);
+		path_ = std::string(path);
+
+		std::string directory = string::directory(path_);
 		folder_reader_.scanDirectory(directory);
 		
 		selectSample(true);
