@@ -51,35 +51,11 @@ struct FolderReader
 		loadDirectoryClips();
 	}
 
-	int getFileCountInDirectory()
-	{
-		std::string directory = string::directory(fileNames_[0]);
-
-		int counter = 0;
-		// First two entries are:
-		// .
-		// ..
-		DIR *dir;
-		struct dirent *ent;
-		if ((dir = opendir(directory.c_str())) != NULL)
-		{
-			while ((ent = readdir(dir)) != NULL)
-			{
-				std::string fileName = ent->d_name;
-				if (fileName != ".." && fileName != ".") // Dont add invalid entries.
-				{
-					counter++;
-				}
-			}
-		}
-		return counter;
-	}
-
 	void getNewSavePath(std::string& path, int& number_of_files)
 	{
 		std::string directory = string::directory(fileNames_[0]);
 
-		number_of_files = getFileCountInDirectory();
+		number_of_files = maxFileIndex_ + 1;
 
 		std::string nameText = "Record" + std::to_string(number_of_files);
 		std::string filename = nameText + ".wav";
@@ -101,13 +77,15 @@ struct FolderReader
 	void reloadDirectory()
 	{
 		std::string directory = string::directory(fileNames_[0]);
-		int files_to_add = getFileCountInDirectory() - (maxFileIndex_ + 1);
-		
-		if (files_to_add <= 0)
-			return;
-
 		scanDirectory(directory);
 	}
+
+	std::vector<AudioClip> audioClips_;
+	std::vector<std::string> fileNames_;
+	std::vector<std::string> displayNames_;
+	int maxFileIndex_ = 0;
+
+private:
 
 	static std::string short_fileName(const std::string &filename, int maxCharacters = 13)
 	{
@@ -119,13 +97,7 @@ struct FolderReader
 		const int overSize = characterCount - maxCharacters;
 		return filename.substr(0, characterCount - overSize);
 	}
-	
-	std::vector<AudioClip> audioClips_;
-	std::vector<std::string> fileNames_;
-	std::vector<std::string> displayNames_;
-	int maxFileIndex_ = 0;
 
-private:
 	void loadDirectoryClips()
 	{
 		for (size_t i = 0; i < fileNames_.size(); i++)

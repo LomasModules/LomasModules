@@ -9,8 +9,9 @@
 
 // Find bug in 1v/oct.
 // Find loading bug on mac
-// path_ does nothing. save directory instead.
 
+// DONE path_ does nothing.
+// DONE // Find bug in 1v/oct.
 // DONE Create a new LoadKnobWidget. Call loading function from there
 // DONE Looping
 // DONE Infinite loog decay/no decay or hold
@@ -216,7 +217,7 @@ struct AdvancedSampler : Module
 					}
 
 					// Put sample on SRC buffer
-					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index_);
+					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index_, interpolation_mode);
 				}
 			}
 
@@ -259,12 +260,6 @@ struct AdvancedSampler : Module
 		
 		if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
 			looping_ = !looping_;
-	}
-
-	void selectSample(bool force_reload = false)
-	{
-		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
-		clip_index_ = sampleParam * folder_reader_.maxFileIndex_;
 	}
 
 	void switchRecState(float sampleRate)
@@ -314,7 +309,13 @@ struct AdvancedSampler : Module
 		std::string directory = string::directory(path_);
 		folder_reader_.scanDirectory(directory);
 		
-		selectSample(true);
+		selectSample();
+	}
+
+	void selectSample()
+	{
+		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
+		clip_index_ = sampleParam * folder_reader_.maxFileIndex_;
 	}
 
 	std::string getClipText()
@@ -327,6 +328,7 @@ struct AdvancedSampler : Module
 		return folder_reader_.audioClips_[clip_index_].waveform_;
 	}
 	
+	Interpolations interpolation_mode = BSPLINE;
 	bool playing_ = false;
 	bool recording_ = false;
 	bool looping_ = false;
@@ -383,11 +385,6 @@ static void selectPath(AdvancedSampler *module)
 	}
 }
 
-static void selectSample(AdvancedSampler *module)
-{
-	module->selectSample();
-}
-
 struct LoadButton : RubberSmallButton
 {
 	LoadButton()
@@ -415,7 +412,7 @@ struct LoadKnob : RoundGrayKnob
 		AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
 		
 		if (module)
-			selectSample(module);
+			module->selectSample();
 
 		RoundGrayKnob::step();
 	}
