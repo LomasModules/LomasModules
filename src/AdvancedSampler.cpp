@@ -1,7 +1,6 @@
 #include "plugin.hpp"
 #include "components.hpp"
 #include "LutEnvelope.hpp"
-//#include "AudioClip.hpp"
 #include "osdialog.h"
 #include "dirent.h"
 #include "FolderReader.hpp"
@@ -10,6 +9,7 @@
 
 // Find bug in 1v/oct.
 // Find loading bug on mac
+// path_ does nothing. save directory instead.
 
 // DONE Create a new LoadKnobWidget. Call loading function from there
 // DONE Looping
@@ -198,7 +198,6 @@ struct AdvancedSampler : Module
 					// Stop at start or end depending on direction
 					int lastSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_end_;
 					int fistSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_start_;
-					
 					bool isLastSample = reverse ? index_ < lastSample : index_ > lastSample;
 
 					if (isLastSample)
@@ -463,7 +462,8 @@ struct DebugDisplay : TransparentWidget
 		nvgTextLetterSpacing(args.vg, 1);
 
 		Vec textPos = Vec(4, 9);
-		NVGcolor textColor = nvgRGB(0xaf, 0xd2, 0x2c);
+		const NVGcolor textColor = nvgRGB(0xaf, 0xd2, 0x2c);
+		const NVGcolor midColor = nvgTransRGBA(textColor, 32);
 		nvgFillColor(args.vg, textColor);
 
 		if (!module)
@@ -475,7 +475,7 @@ struct DebugDisplay : TransparentWidget
 
 		// Draw loop text
 		std::string loop_text_ = "ON";
-		NVGcolor loop_color = module->looping_ ? textColor : nvgTransRGBA(textColor, 16);
+		NVGcolor loop_color = module->looping_ ? textColor : midColor;
 		nvgFillColor(args.vg, loop_color);
 		nvgFontSize(args.vg, 8);
 		nvgText(args.vg, 63, 39, loop_text_.c_str(), NULL);		
@@ -499,8 +499,10 @@ struct DebugDisplay : TransparentWidget
 		nvgLineTo(args.vg, waveform_origin.x + module->phase_start_ * waveform_width, waveform_origin.y + 10);
 		nvgMoveTo(args.vg, waveform_origin.x + module->phase_end_ * waveform_width, waveform_origin.y - 10);
 		nvgLineTo(args.vg, waveform_origin.x + module->phase_end_ * waveform_width, waveform_origin.y + 10);
-		nvgMoveTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y - 10);
-		nvgLineTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y + 10);
+		if (module->playing_) {
+			nvgMoveTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y - 10);
+			nvgLineTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y + 10);
+		}
 		nvgStrokeColor(args.vg, textColor);
 		nvgStroke(args.vg);
 		nvgClosePath(args.vg);
@@ -517,6 +519,9 @@ struct DebugDisplay : TransparentWidget
 		nvgMoveTo(args.vg, waveform_origin.x, waveform_origin.y);
 		for (size_t i = 0; i < WAVEFORM_RESOLUTION; i++)
 			nvgLineTo(args.vg, waveform_origin.x + i * (waveform_width / WAVEFORM_RESOLUTION), waveform_origin.y - points[i] * waveform_height);
+		
+		nvgFillColor(args.vg, midColor);
+		nvgFill(args.vg);
 
 		nvgStroke(args.vg);
 	}
