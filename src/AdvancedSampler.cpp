@@ -190,15 +190,14 @@ struct AdvancedSampler : Module
 		//else
 		env_.configureADenvelope(attackLambda, decayLambda); // Attack & Decay
 
-		bool reverse = phase_start_ > phase_end_;
-		int lastSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_end_;
-		int fistSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_start_;
-		float freq = std::pow(2, (params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 12) / 12.0f);
-
 		// Sample rate conversion
 		if (outputBuffer_.empty())
 		{
 			dsp::Frame<1> in[24];
+			bool reverse = phase_start_ > phase_end_;
+			int lastSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_end_;
+			int fistSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_start_;
+			float freq = std::pow(2, (params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 12) / 12.0f);
 
 			// Audio process
 			for (int i = 0; i < 24; i++)
@@ -244,7 +243,7 @@ struct AdvancedSampler : Module
 		}
 	}
 
-	void updateUI(float sampleRate)
+	inline void updateUI(float sampleRate)
 	{
 		ui_timer_.reset();
 		display_phase_ = index_ / folder_reader_.audioClips_[clip_index_].getSampleCount();
@@ -268,7 +267,7 @@ struct AdvancedSampler : Module
 			looping_ = !looping_;
 	}
 
-	void switchRecState(float sampleRate)
+	inline void switchRecState(float sampleRate)
 	{
 		recording_ = !recording_;
 		if (recording_)
@@ -297,7 +296,7 @@ struct AdvancedSampler : Module
 		}
 	}
 
-	void trigger()
+	inline void trigger()
 	{
 		env_.tigger();
 		float start_param = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
@@ -318,18 +317,18 @@ struct AdvancedSampler : Module
 		selectSample();
 	}
 
-	void selectSample()
+	inline void selectSample()
 	{
 		float sampleParam = clamp(params[SAMPLE_PARAM].getValue() + (inputs[SAMPLE_INPUT].getVoltage() * .1f), 0.0f, 1.0f);
 		clip_index_ = sampleParam * folder_reader_.maxFileIndex_;
 	}
 
-	std::string getClipText()
+	inline std::string getClipText()
 	{
 		return folder_reader_.displayNames_[clip_index_];
 	}
 
-	float *getClipWaveform()
+	inline float *getClipWaveform()
 	{
 		return folder_reader_.audioClips_[clip_index_].waveform_;
 	}
