@@ -182,7 +182,7 @@ struct AdvancedSampler : Module
 		bool reverse = phase_start_ > phase_end_;
 		int lastSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_end_;
 		int fistSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_start_;
-		float freq = std::pow(2, (params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() / 12));
+		float freq = std::pow(2, (params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 10));
 
 		// Sample rate conversion
 		if (outputBuffer_.empty())
