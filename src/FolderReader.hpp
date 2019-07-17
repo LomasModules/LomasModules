@@ -74,7 +74,7 @@ struct FolderReader
 		return 0;
 	}
 
-	void reloadDirectory()
+	void reScanDirectory()
 	{
 		std::string directory = string::directory(fileNames_[0]);
 		scanDirectory(directory);

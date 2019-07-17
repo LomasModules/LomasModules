@@ -7,7 +7,7 @@
 
 // TODO
 
-// Find bug in 1v/oct.
+// Modulating sample parameter AND start/end point crashes rack.
 // Find loading bug on mac
 
 // DONE path_ does nothing.
@@ -222,7 +222,7 @@ struct AdvancedSampler : Module
 					}
 
 					// Put sample on SRC buffer
-					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index_, (Interpolations)interpolation_mode_index_);
+					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index_, NONE);
 				}
 			}
 
@@ -286,7 +286,7 @@ struct AdvancedSampler : Module
 
 			folder_reader_.getNewSavePath(save_path, number_of_files);
 			folder_reader_.audioClips_[clip_index_].saveToDisk(save_path);
-			folder_reader_.reloadDirectory();
+			folder_reader_.reScanDirectory();
 
 			float file_index = folder_reader_.findFileNameIndex(save_path);
 			float sampleParam = file_index / folder_reader_.maxFileIndex_;
@@ -300,7 +300,7 @@ struct AdvancedSampler : Module
 	{
 		env_.tigger();
 		float start_param = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
-		index_ = 1 + folder_reader_.audioClips_[clip_index_].getSampleCount() * start_param;
+		index_ = folder_reader_.audioClips_[clip_index_].getSampleCount() * start_param;
 		playing_ = true;
 	}
 

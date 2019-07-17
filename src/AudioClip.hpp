@@ -18,6 +18,8 @@ struct AudioClip
 
 	float getSample(float index, Interpolations interpolation_mode)
 	{
+		index = clamp(index, 1.0f, (float)(sampleCount_ - 2));
+
 		int x1 = floorf(index);
 		int x0 = x1 - 1;
 		int x2 = x1 + 1;
@@ -115,7 +117,7 @@ struct AudioClip
 	{
 		for (unsigned int i = first_sample; i < sampleCount_; i++)
 		{
-			if (left_channel_[i] == 0)
+			if (left_channel_[i] == 0.0f)
 				return i;
 		}
 		return first_sample;
@@ -132,17 +134,12 @@ struct AudioClip
 
 		left_channel_.clear();
 
-		// This so we don't have to clamp on interolation samplepos - 1
-		left_channel_.push_back(0);
 
 		for (size_t i = 0; i < totalSampleCount; i += channels_)
 			left_channel_.push_back(pSampleData[i]);
 
 		sampleCount_ = left_channel_.size();
 
-		// This so we don't have to clamp on interolation samplepos + 2
-		left_channel_.push_back(0);
-		left_channel_.push_back(0);
 
 		drwav_free(pSampleData);
 
