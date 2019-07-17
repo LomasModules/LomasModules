@@ -7,9 +7,9 @@
 
 // TODO
 
-// Modulating sample parameter AND start/end point crashes rack.
 // Find loading bug on mac
 
+// DONE Modulating sample parameter AND start/end point crashes rack.
 // DONE path_ does nothing.
 // DONE // Find bug in 1v/oct.
 // DONE Create a new LoadKnobWidget. Call loading function from there
@@ -193,8 +193,8 @@ struct AdvancedSampler : Module
 		{
 			dsp::Frame<1> in[24];
 			bool reverse = phase_start_ > phase_end_;
-			float tune_input = clamp(inputs[TUNE_INPUT].getVoltage(), -9.f, 6.f);
-			float freq = std::pow(2, (params[TUNE_PARAM].getValue() + tune_input * 12) / 12.0f);
+			float tune = clamp(params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 12, -96.f, 96.f);
+			float freq = std::pow(2, tune / 12.0f);
 			float pitch = freq / folder_reader_.audioClips_[clip_index_].getSampleCount();
 
 			// Audio process
@@ -277,19 +277,21 @@ struct AdvancedSampler : Module
 		else // !recording
 		{
 			folder_reader_.audioClips_[clip_index_].stopRec();
+			if (save_recordings_)
+			{
+				std::string save_path;
+				int number_of_files = 0;
 
-			std::string save_path;
-			int number_of_files = 0;
+				folder_reader_.getNewSavePath(save_path, number_of_files);
+				folder_reader_.audioClips_[clip_index_].saveToDisk(save_path);
+				folder_reader_.reScanDirectory();
 
-			folder_reader_.getNewSavePath(save_path, number_of_files);
-			folder_reader_.audioClips_[clip_index_].saveToDisk(save_path);
-			folder_reader_.reScanDirectory();
+				float file_index = folder_reader_.findFileNameIndex(save_path);
+				float sampleParam = file_index / folder_reader_.maxFileIndex_;
 
-			float file_index = folder_reader_.findFileNameIndex(save_path);
-			float sampleParam = file_index / folder_reader_.maxFileIndex_;
-
-			params[SAMPLE_PARAM].setValue(sampleParam);
-			clip_index_ = file_index;
+				params[SAMPLE_PARAM].setValue(sampleParam);
+				clip_index_ = file_index;
+			}
 		}
 	}
 
@@ -334,6 +336,7 @@ struct AdvancedSampler : Module
 	bool recording_ = false;
 	bool looping_ = false;
 	bool eoc_ = false;
+	bool save_recordings_ = true;
 	float phase_ = 0;
 	float phase_start_ = 0;
 	float phase_end_ = 0;
@@ -599,6 +602,21 @@ struct AdvancedSamplerWidget : ModuleWidget
 				return menu;
 			}
 		};
+
+		struct SaveItem : MenuItem {
+			AdvancedSampler *module;
+			void onAction(const event::Action &e) override {
+				module->save_recordings_ ^= true;
+			}
+			void step() override {
+				rightText = CHECKMARK(module->save_recordings_);
+			}
+		};
+
+		menu->addChild(new MenuEntry);
+		SaveItem *saveItem = createMenuItem<SaveItem>("Save recordings");
+		saveItem->module = module;
+		menu->addChild(saveItem);
 
 		menu->addChild(new MenuEntry);
 		InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation mode");
