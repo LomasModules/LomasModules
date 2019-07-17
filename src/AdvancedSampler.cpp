@@ -205,10 +205,10 @@ struct AdvancedSampler : Module
 				if (playing_)
 				{
 					// Update read positon
-					phase_ += reverse ? -pitch : pitch; // index_ += reverse ? -freq : freq;
+					phase_ += reverse ? -pitch : pitch;
 
 					// Stop at start or end depending on direction
-					bool isLastSample = reverse ? phase_ < phase_end_ : phase_ > phase_end_;
+					bool isLastSample = reverse ? phase_ <= phase_end_ : phase_ >= phase_end_;
 
 					if (isLastSample)
 					{
@@ -246,8 +246,6 @@ struct AdvancedSampler : Module
 	inline void updateUI(float sampleRate)
 	{
 		ui_timer_.reset();
-		//display_phase_ = index_ / folder_reader_.audioClips_[clip_index_].getSampleCount();
-		// setLedColor(STATUS_LED, 0, 0, folder_reader_.audioClips_[clip_index_].isLoaded(), playing_);
 
 		// Recording start/stop
 		if (inputs[AUDIO_INPUT].isConnected())
@@ -337,7 +335,7 @@ struct AdvancedSampler : Module
 	bool recording_ = false;
 	bool looping_ = false;
 	bool eoc_ = false;
-	//float index_ = 0;
+	float phase_ = 0;
 	float phase_start_ = 0;
 	float phase_end_ = 0;
 	LutEnvelope env_;
@@ -355,7 +353,6 @@ struct AdvancedSampler : Module
 
 	// UI
 	dsp::Timer ui_timer_;
-	float phase_ = 0;
 	dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
 
 	inline void setLedColor(int ledType, int index, float r, float g, float b)
