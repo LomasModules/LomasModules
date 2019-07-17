@@ -1,15 +1,15 @@
 {
   "slug": "LomasModules",
   "name": "LomasModules",
-  "version": "1.0.0",
-  "license": "BSD-3",
+  "version": "1.0.1",
+  "license": "BSD-3-Clause",
   "brand": "Lomas",
   "author": "Guillermo Moreno",
   "authorEmail": "LomasModules@gmail.com",
   "authorUrl": "https://github.com/LomasModules",
   "pluginUrl": "https://github.com/LomasModules/LomasModules",
-  "manualUrl": "",
-  "sourceUrl": "https://github.com/LomasModules/LomasModules",
+  "manualUrl": "https://github.com/LomasModules/LomasModules",
+  "sourceUrl": "https://github.com/LomasModules/LomasModules.git",
   "donateUrl": "",
   "modules": [
     {
