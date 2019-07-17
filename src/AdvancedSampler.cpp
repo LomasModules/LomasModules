@@ -91,7 +91,7 @@ struct AdvancedSampler : Module
 		json_object_set_new(rootJ, "play", json_boolean(playing_));
 
 		// Index. Prevents playing from sample 0 when reloading patch.
-		json_object_set_new(rootJ, "index", json_integer(index_));
+		json_object_set_new(rootJ, "phase", json_real(phase_));
 		
 		// Interpolation
 		json_object_set_new(rootJ, "interpolation", json_integer(interpolation_mode_index_));
@@ -120,9 +120,9 @@ struct AdvancedSampler : Module
 			playing_ = json_boolean_value(playJ);
 
 		// Index
-		json_t *indexJ = json_object_get(rootJ, "index");
-		if (indexJ)
-			index_ = json_integer_value(indexJ);
+		json_t *phaseJ = json_object_get(rootJ, "phase");
+		if (phaseJ)
+			phase_ = (float)json_real_value(phaseJ);
 
 		// Interpolation
 		json_t *interpolationJ = json_object_get(rootJ, "interpolation");
@@ -195,9 +195,8 @@ struct AdvancedSampler : Module
 		{
 			dsp::Frame<1> in[24];
 			bool reverse = phase_start_ > phase_end_;
-			int lastSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_end_;
-			int fistSample = folder_reader_.audioClips_[clip_index_].getSampleCount() * phase_start_;
 			float freq = std::pow(2, (params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 12) / 12.0f);
+			float pitch = freq / folder_reader_.audioClips_[clip_index_].getSampleCount();
 
 			// Audio process
 			for (int i = 0; i < 24; i++)
@@ -206,23 +205,24 @@ struct AdvancedSampler : Module
 				if (playing_)
 				{
 					// Update read positon
-					index_ += reverse ? -freq : freq;
+					phase_ += reverse ? -pitch : pitch; // index_ += reverse ? -freq : freq;
 
 					// Stop at start or end depending on direction
-					bool isLastSample = reverse ? index_ < lastSample : index_ > lastSample;
+					bool isLastSample = reverse ? phase_ < phase_end_ : phase_ > phase_end_;
 
 					if (isLastSample)
 					{
 						eoc_ = true;
 
 						if (looping_)
-							index_ = fistSample;
+							phase_ = phase_start_;
 						else
 							playing_ = false;
 					}
 
 					// Put sample on SRC buffer
-					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index_, NONE);
+					int index = phase_ * folder_reader_.audioClips_[clip_index_].getSampleCount();
+					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index, NONE);
 				}
 			}
 
@@ -246,7 +246,7 @@ struct AdvancedSampler : Module
 	inline void updateUI(float sampleRate)
 	{
 		ui_timer_.reset();
-		display_phase_ = index_ / folder_reader_.audioClips_[clip_index_].getSampleCount();
+		//display_phase_ = index_ / folder_reader_.audioClips_[clip_index_].getSampleCount();
 		// setLedColor(STATUS_LED, 0, 0, folder_reader_.audioClips_[clip_index_].isLoaded(), playing_);
 
 		// Recording start/stop
@@ -299,8 +299,7 @@ struct AdvancedSampler : Module
 	inline void trigger()
 	{
 		env_.tigger();
-		float start_param = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
-		index_ = folder_reader_.audioClips_[clip_index_].getSampleCount() * start_param;
+		phase_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
 		playing_ = true;
 	}
 
@@ -338,7 +337,7 @@ struct AdvancedSampler : Module
 	bool recording_ = false;
 	bool looping_ = false;
 	bool eoc_ = false;
-	float index_ = 0;
+	//float index_ = 0;
 	float phase_start_ = 0;
 	float phase_end_ = 0;
 	LutEnvelope env_;
@@ -356,7 +355,7 @@ struct AdvancedSampler : Module
 
 	// UI
 	dsp::Timer ui_timer_;
-	float display_phase_ = 0;
+	float phase_ = 0;
 	dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
 
 	inline void setLedColor(int ledType, int index, float r, float g, float b)
@@ -491,8 +490,8 @@ struct DebugDisplay : TransparentWidget
 		nvgLineTo(args.vg, waveform_origin.x + module->phase_end_ * waveform_width, waveform_origin.y + 10);
 		if (module->playing_)
 		{
-			nvgMoveTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y - 10);
-			nvgLineTo(args.vg, waveform_origin.x + module->display_phase_ * waveform_width, waveform_origin.y + 10);
+			nvgMoveTo(args.vg, waveform_origin.x + module->phase_ * waveform_width, waveform_origin.y - 10);
+			nvgLineTo(args.vg, waveform_origin.x + module->phase_ * waveform_width, waveform_origin.y + 10);
 		}
 		nvgStrokeColor(args.vg, textColor);
 		nvgStroke(args.vg);
