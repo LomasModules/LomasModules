@@ -74,7 +74,6 @@ struct AdvancedSampler : Module
 		configParam(PLAY_PARAM, 0.f, 1.f, 0.f, "Play");
 		configParam(LOOP_PARAM, 0.f, 1.f, 0.f, "Loop");
 		configParam(REC_PARAM, 0.f, 1.f, 0.f, "Record");
-		//configParam(ATTACK_HOLD_PARAM, 0.f, 1.f, 0.f, "Attack / Hold");
 	}
 
 	json_t *dataToJson() override
@@ -165,7 +164,6 @@ struct AdvancedSampler : Module
 		if (playing_)
 			audioProcess(args);
 
-		// EOC
 		if (eoc_)
 		{
 			eoc_ = false;
@@ -195,7 +193,8 @@ struct AdvancedSampler : Module
 		{
 			dsp::Frame<1> in[24];
 			bool reverse = phase_start_ > phase_end_;
-			float freq = std::pow(2, (params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 12) / 12.0f);
+			float tune_input = clamp(inputs[TUNE_INPUT].getVoltage(), -9.f, 6.f);
+			float freq = std::pow(2, (params[TUNE_PARAM].getValue() + tune_input * 12) / 12.0f);
 			float pitch = freq / folder_reader_.audioClips_[clip_index_].getSampleCount();
 
 			// Audio process
