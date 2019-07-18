@@ -126,7 +126,12 @@ struct GateSequencer : Module
 		if (ui_timer_.process(args.sampleTime) > UI_update_time)
 			UpdateUI(gate_in, gate_out);
 	}
+	//           Click   -  Hold ON - Hold OFF
+	// Page      Select  -          -   Copy
+	// Pattern   Select  -   Clear  -   Copy
 
+	// Grid      Switch  -  Last step
+	
 	void UpdateUI(bool gate_in, bool gate_out)
 	{
 		ui_timer_.reset();
@@ -157,13 +162,6 @@ struct GateSequencer : Module
 			setLedColor(GRID_LED, i, is_last_step, is_active_step, is_step_on);
 		}
 
-		// Knobs
-		// chances[selected_step_ + (pattern_index_ * MAX_PATTERN_LEN)] = params[KNOB_PARAM + 0].getValue();
-		// pattern_len_[pattern_index_] = params[KNOB_PARAM + 3].getValue();
-
-		//setLedColor(GRID_LED, selected_step_, 1, 1, 1);
-		//chances[]
-
 		// Page
 		for (int i = 0; i < PAGES; i++)
 		{
@@ -176,7 +174,11 @@ struct GateSequencer : Module
 				page_index_ = i;
 				break;
 			case LongPressButton::LONG_PRESS:
-				copyPage(pattern_index_, page_index_, i);
+				if (page_index_ == i)
+					clearPage(pattern_index_, i);
+				else
+					copyPage(pattern_index_, page_index_, i);
+
 				page_index_ = i;
 				break;
 			}
@@ -197,14 +199,11 @@ struct GateSequencer : Module
 			case LongPressButton::LONG_PRESS:
 				// long press on selected pattern clears it, in other copy active pattern to holded button.
 				if (pattern_index_ == i)
-				{
 					clearPattern(i);
-				}
 				else
-				{
 					copyPattern(pattern_index_, i);
-					next_pattern_index_ = i;
-				}
+		
+				next_pattern_index_ = i;
 				break;
 			}
 			setLedColor(PATTERN_LED, i,
@@ -220,13 +219,6 @@ struct GateSequencer : Module
 		{
 			gates[i] = 0;
 		}
-	}
-
-	void clearPattern(int patternI)
-	{
-		int start = patternI * MAX_PATTERN_LEN;
-		for (int i = start; i < start + MAX_PATTERN_LEN; i++)
-			gates[i] = 0;
 	}
 
 	inline bool getStep(int step_index, int pattern_index)
@@ -251,6 +243,13 @@ struct GateSequencer : Module
 		pattern_len_[to] = pattern_len_[from];
 	}
 
+	void clearPattern(int patternI)
+	{
+		int start = patternI * MAX_PATTERN_LEN;
+		for (int i = start; i < start + MAX_PATTERN_LEN; i++)
+			gates[i] = 0;
+	}
+
 	void copyPage(int pattern, int from, int to)
 	{
 		int from_start = (pattern * MAX_PATTERN_LEN) + (from * SEQUENCER_LEN);
@@ -258,6 +257,14 @@ struct GateSequencer : Module
 
 		for (int i = 0; i < SEQUENCER_LEN; i++)
 			gates[i + to_start] = gates[i + from_start];
+	}
+
+	void clearPage(int pattern, int page)
+	{
+		int start = (pattern * MAX_PATTERN_LEN) + (page * SEQUENCER_LEN);
+
+		for (int i = start; i < start + SEQUENCER_LEN; i++)
+			gates[i + start] = 0;
 	}
 
 	json_t *dataToJson() override
@@ -374,7 +381,7 @@ struct GateSequencerWidget : ModuleWidget
 			Vec(15.24, 83.324),
 			Vec(25.4, 83.324),
 			Vec(35.56, 83.324)
-			};
+		};
 		
 		for (int i = 0; i < 4; i++)
 		{
@@ -398,6 +405,51 @@ struct GateSequencerWidget : ModuleWidget
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(20.32, 113.441)), module, GateSequencer::RESET_INPUT));
 
 		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(33.02, 113.441)), module, GateSequencer::GATE_OUTPUT));
+	}
+
+	void appendContextMenu(Menu *menu) override
+	{
+		GateSequencer *module = dynamic_cast<GateSequencer *>(this->module);
+
+		struct QuatizationIndexItem : MenuItem
+		{
+			GateSequencer *module;
+			int index;
+			void onAction(const event::Action &e) override
+			{
+				module->global_quatization_ = index;
+			}
+		};
+
+		struct QuatizationItem : MenuItem
+		{
+			GateSequencer *module;
+			Menu *createChildMenu() override
+			{
+				Menu *menu = new Menu();
+				const std::string quantizationLabels[] = {
+					"4 Bars",
+					"1 Bar",
+					"1/16"};
+				const int quantizationValues[] = {
+					64,
+					16,
+					1};
+				for (int i = 0; i < (int)LENGTHOF(quantizationLabels); i++)
+				{
+					QuatizationIndexItem *item = createMenuItem<QuatizationIndexItem>(quantizationLabels[i], CHECKMARK(module->global_quatization_ == quantizationValues[i]));
+					item->module = module;
+					item->index = quantizationValues[i];
+					menu->addChild(item);
+				}
+				return menu;
+			}
+		};
+
+		menu->addChild(new MenuEntry);
+		QuatizationItem *quatizationItem = createMenuItem<QuatizationItem>("Global quantization");
+		quatizationItem->module = module;
+		menu->addChild(quatizationItem);
 	}
 };
 
