@@ -180,13 +180,13 @@ struct AdvancedSampler : Module
 		float attack = clamp(params[ATTACK_PARAM].getValue() + (inputs[ATTACK_INPUT].getVoltage() * .1f), 0.f, 1.f);
 		float decay = clamp(params[DECAY_PARAM].getValue() + (inputs[DECAY_INPUT].getVoltage() * .1f), 0.f, 1.f);
 		float attackLambda = pow(LAMBDA_BASE, -attack) / MIN_TIME;
-		float decayLambda = decay == 1.0f ? 0.0f : pow(LAMBDA_BASE, -decay) / MIN_TIME;
+		float decayLambda = decay == 1.0f && looping_ ? 0.0f : pow(LAMBDA_BASE, -decay) / MIN_TIME;
 
 		// TODO hold envelope
-		//if (params[ATTACK_HOLD_PARAM].getValue())
-		//	env_.configureHDenvelope(attackLambda, decayLambda); // Hold & Decay
-		//else
-		env_.configureADenvelope(attackLambda, decayLambda); // Attack & Decay
+		if (hold_)
+			env_.configureHDenvelope(attackLambda, decayLambda); // Hold & Decay
+		else
+			env_.configureADenvelope(attackLambda, decayLambda); // Attack & Decay
 
 		// Sample rate conversion
 		if (outputBuffer_.empty())
@@ -337,6 +337,7 @@ struct AdvancedSampler : Module
 	bool looping_ = false;
 	bool eoc_ = false;
 	bool save_recordings_ = true;
+	bool hold_ = false;
 	float phase_ = 0;
 	float phase_start_ = 0;
 	float phase_end_ = 0;
@@ -613,13 +614,28 @@ struct AdvancedSamplerWidget : ModuleWidget
 			}
 		};
 
+		struct HoldItem : MenuItem {
+			AdvancedSampler *module;
+			void onAction(const event::Action &e) override {
+				module->hold_ ^= true;
+			}
+			void step() override {
+				rightText = CHECKMARK(module->hold_);
+			}
+		};
+
+		menu->addChild(new MenuEntry);
+		HoldItem *holdItem = createMenuItem<HoldItem>("Hold");
+		holdItem->module = module;
+		menu->addChild(holdItem);
+
 		menu->addChild(new MenuEntry);
 		SaveItem *saveItem = createMenuItem<SaveItem>("Save recordings");
 		saveItem->module = module;
 		menu->addChild(saveItem);
 
 		menu->addChild(new MenuEntry);
-		InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation mode");
+		InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation mode", "->");
 		interpolationItem->module = module;
 		menu->addChild(interpolationItem);
 	}

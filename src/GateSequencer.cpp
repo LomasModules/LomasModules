@@ -127,7 +127,7 @@ struct GateSequencer : Module
 			UpdateUI(gate_in, gate_out);
 	}
 	//           Click   -  Hold ON - Hold OFF
-	// Page      Select  -          -   Copy
+	// Page      Select  -   Clear  -   Copy
 	// Pattern   Select  -   Clear  -   Copy
 
 	// Grid      Switch  -  Last step
