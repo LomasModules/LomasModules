@@ -304,7 +304,12 @@ struct AdvancedSampler : Module
 		std::string directory = string::directory(path_);
 		folder_reader_.scanDirectory(directory);
 
-		selectSample();
+		// Move knob to correct index.
+		std::string filename = string::filename(path_);
+		std::string fixed_path = directory + "/" + filename;
+		float index = folder_reader_.findFileNameIndex(fixed_path);
+		float sampleParam = index / folder_reader_.maxFileIndex_;
+		params[SAMPLE_PARAM].setValue(sampleParam);
 	}
 
 	inline void selectSample()
@@ -625,7 +630,7 @@ struct AdvancedSamplerWidget : ModuleWidget
 		saveItem->module = module;
 		menu->addChild(saveItem);
 
-		InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation mode", "->");
+		InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation mode", ">");
 		interpolationItem->module = module;
 		menu->addChild(interpolationItem);
 	}
