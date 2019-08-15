@@ -36,27 +36,35 @@ struct GateSequencer : Module
 		NUM_LIGHTS
 	};
 
+	enum ResetMode
+	{
+		NEXT_CLOCK_INPUT,
+		INSTANT,
+	};
+
 	dsp::SchmittTrigger clock_tiggrer_, reset_trigger_;
 	dsp::Timer reset_timer_;
 
 	bool gates[MAX_PATTERN_LEN * PATTERNS];
 	int pattern_len_[PATTERNS] = {15, 15, 15, 15};
 
-	int beat_counter_ = 0;   // From 0 to infinity
-	int sequencer_step_ = 0; // From 0 to pattern len.
+	int beat_counter_ = 0; // From 0 to infinity
 	int pattern_index_ = 0;
 	int next_pattern_index_ = 0;
 
 	int global_quatization_ = 16;
-
+	int reset_mode_index_ = 0;
+	bool reset_next_step_ = false;
+	
 	// UI
 	int page_index_ = 0;
 	LongPressButton grid_buttons_[SEQUENCER_LEN];
 	LongPressButton page_buttons_[4];
 	LongPressButton pattern_buttons_[4];
-
 	dsp::Timer ui_timer_;
-	
+
+	// Link modules
+	float leftMessages[2][8] = {};
 
 	GateSequencer()
 	{
@@ -66,60 +74,136 @@ struct GateSequencer : Module
 		configParam(PAGE_PARAM + 2, 0.f, 1.f, 0.f, "Page 3");
 		configParam(PAGE_PARAM + 3, 0.f, 1.f, 0.f, "Page 4");
 
+		configParam(GRID_PARAM + 0, 0.f, 1.f, 0.f, "Step 1");
+		configParam(GRID_PARAM + 1, 0.f, 1.f, 0.f, "Step 2");
+		configParam(GRID_PARAM + 2, 0.f, 1.f, 0.f, "Step 3");
+		configParam(GRID_PARAM + 3, 0.f, 1.f, 0.f, "Step 4");
+		configParam(GRID_PARAM + 4, 0.f, 1.f, 0.f, "Step 5");
+		configParam(GRID_PARAM + 5, 0.f, 1.f, 0.f, "Step 6");
+		configParam(GRID_PARAM + 6, 0.f, 1.f, 0.f, "Step 7");
+		configParam(GRID_PARAM + 7, 0.f, 1.f, 0.f, "Step 8");
+		configParam(GRID_PARAM + 8, 0.f, 1.f, 0.f, "Step 9");
+		configParam(GRID_PARAM + 9, 0.f, 1.f, 0.f, "Step 10");
+		configParam(GRID_PARAM + 10, 0.f, 1.f, 0.f, "Step 11");
+		configParam(GRID_PARAM + 11, 0.f, 1.f, 0.f, "Step 12");
+		configParam(GRID_PARAM + 12, 0.f, 1.f, 0.f, "Step 13");
+		configParam(GRID_PARAM + 13, 0.f, 1.f, 0.f, "Step 14");
+		configParam(GRID_PARAM + 14, 0.f, 1.f, 0.f, "Step 15");
+		configParam(GRID_PARAM + 15, 0.f, 1.f, 0.f, "Step 16");
+
+		configParam(PATTERN_PARAM + 0, 0.f, 1.f, 0.f, "Pattern 1");
+		configParam(PATTERN_PARAM + 1, 0.f, 1.f, 0.f, "Pattern 2");
+		configParam(PATTERN_PARAM + 2, 0.f, 1.f, 0.f, "Pattern 3");
+		configParam(PATTERN_PARAM + 3, 0.f, 1.f, 0.f, "Pattern 4");
+
 		configParam(KNOB_PARAM + 0, 0.f, 1.f, 1.f, "Trigger prob", "%", 0.0f, 100.0f, 0.0f);
 		configParam(KNOB_PARAM + 3, 0.f, 63.f, 0.f, "Pattern length", " steps", 0.0f, 1.0f, 1.0f);
 
 		clearAllPatterns();
+
+		leftExpander.producerMessage = leftMessages[0];
+		leftExpander.consumerMessage = leftMessages[1];
+	}
+
+	void onReset() override
+	{
+		for (size_t i = 0; i < MAX_PATTERN_LEN * PATTERNS; i++)
+		{
+			gates[i] = false;
+		}
+		for (size_t i = 0; i < PATTERNS; i++)
+		{
+			pattern_len_[i] = 15;
+		}	
+	}
+
+	int SequenceIndex()
+	{
+		return beat_counter_ % (pattern_len_[pattern_index_] + 1);
 	}
 
 	void setBeat(int newBeat)
 	{
 		beat_counter_ = newBeat;
-		
+
 		if (beat_counter_ % global_quatization_ == 0)
 			pattern_index_ = next_pattern_index_;
-
-		sequencer_step_ = beat_counter_ % (pattern_len_[pattern_index_] + 1);
 	}
 
 	void process(const ProcessArgs &args) override
 	{
-		// INPUTS
-
-		reset_timer_.process(args.sampleTime);
-		if (inputs[RESET_INPUT].isConnected())
-		{
-			if (reset_trigger_.process(inputs[RESET_INPUT].getVoltage()))
-			{
-				reset_timer_.reset();
-				setBeat(0);
-				//sequencer_step_ = 0;
-			}
-		}
-
+		const bool is_mother = rightExpander.module && rightExpander.module->model == modelGateSequencer;
+		const bool is_child = leftExpander.module && leftExpander.module->model == modelGateSequencer;
 		bool gate_in = false;
-		if (inputs[CLOCK_INPUT].isConnected())
+
+		if (!is_child)
 		{
-			gate_in = inputs[CLOCK_INPUT].getVoltage() > .01f;
-			if (clock_tiggrer_.process(inputs[CLOCK_INPUT].getVoltage()))
+			// INPUTS
+			if (inputs[RESET_INPUT].isConnected())
 			{
-				if (reset_timer_.time > 1e-3f)
+				if (reset_trigger_.process(inputs[RESET_INPUT].getVoltage()))
 				{
-					setBeat(beat_counter_ + 1);
-					/*
-					sequencer_step_++;
-					if (sequencer_step_ > pattern_len_[pattern_index_])
+					if (reset_mode_index_ == (int)INSTANT)
 					{
-						sequencer_step_ = 0;
-						pattern_index_ = next_pattern_index_;
+						setBeat(0);
 					}
-					*/
+					else
+					{
+						reset_next_step_ = true;
+					}
+
+					reset_timer_.reset();
 				}
 			}
+
+			if (inputs[CLOCK_INPUT].isConnected())
+			{
+				if (clock_tiggrer_.process(inputs[CLOCK_INPUT].getVoltage()))
+				{
+					if (reset_timer_.time > 1e-3f)
+					{
+						int nextBeat = beat_counter_ + 1;
+						if (reset_next_step_)
+						{
+							nextBeat = 0;
+							reset_next_step_ = false;
+						}
+						setBeat(nextBeat);
+					}
+				}
+				gate_in = inputs[CLOCK_INPUT].getVoltage() > .01f;
+			}
 		}
 
+		if (is_child)
+		{
+			float *gateMessage = (float *)leftExpander.consumerMessage;
+
+			// Read message
+			beat_counter_ = gateMessage[0];
+			gate_in = (gateMessage[1] > 0.0f);
+			next_pattern_index_ = gateMessage[2];
+			pattern_index_ = gateMessage[3];
+		}
+
+		if (is_mother)
+		{
+			float *gateMessage = (float *)rightExpander.module->leftExpander.producerMessage;
+
+			// Write message
+			gateMessage[0] = beat_counter_;
+			gateMessage[1] = gate_in ? 1 : 0;
+			gateMessage[2] = next_pattern_index_;
+			gateMessage[3] = pattern_index_;
+
+			// Flip messages at the end of the timestep
+			rightExpander.module->leftExpander.messageFlipRequested = true;
+		}
+
+		reset_timer_.process(args.sampleTime);
+
 		// OUTPUT
-		bool gate_out = getStep(sequencer_step_, pattern_index_) && gate_in;
+		bool gate_out = getStep(SequenceIndex(), pattern_index_) && gate_in;
 		outputs[GATE_OUTPUT].setVoltage(gate_out ? 10.0f : 0.0f);
 
 		// UI
@@ -131,13 +215,18 @@ struct GateSequencer : Module
 	// Pattern   Select  -   Clear  -   Copy
 
 	// Grid      Switch  -  Last step
-	
-	void UpdateUI(bool gate_in, bool gate_out)
+	//float phase = 0;
+
+	inline void UpdateUI(bool gate_in, bool gate_out)
 	{
+		//phase += 1.0f * UI_update_time;
+        
+		//if (phase >= 0.5f)
+        //    phase -= 1.f;
+
 		ui_timer_.reset();
 
-		int step_page = sequencer_step_ / SEQUENCER_LEN;
-		int last_step_page = pattern_len_[pattern_index_] / SEQUENCER_LEN;
+		
 		int page_offset = page_index_ * SEQUENCER_LEN;
 
 		// Grid
@@ -156,13 +245,21 @@ struct GateSequencer : Module
 				pattern_len_[pattern_index_] = grid_step;
 				break;
 			}
+			bool is_after_last_step = pattern_len_[pattern_index_] < grid_step;
 			bool is_last_step = pattern_len_[pattern_index_] == grid_step;
-			bool is_active_step = (sequencer_step_ == grid_step);
+			bool is_active_step = (SequenceIndex() == grid_step);
 			bool is_step_on = getStep(grid_step, pattern_index_);
-			setLedColor(GRID_LED, i, is_last_step, is_active_step, is_step_on);
+
+			float red = is_last_step ? .25f : 0.f;
+			float blue = is_step_on ? 
+				is_after_last_step ? 0.1f : 1.f
+				: 0.f;
+			setLedColor(GRID_LED, i, red, is_active_step, blue);
 		}
 
 		// Page
+		int step_page = SequenceIndex() / SEQUENCER_LEN;
+		int last_step_page = pattern_len_[pattern_index_] / SEQUENCER_LEN;
 		for (int i = 0; i < PAGES; i++)
 		{
 			switch (page_buttons_[i].step(params[PAGE_PARAM + i].getValue(), UI_update_time))
@@ -182,7 +279,8 @@ struct GateSequencer : Module
 				page_index_ = i;
 				break;
 			}
-			setLedColor(PAGE_LED, i, last_step_page == i, step_page == i, page_index_ == i);
+			float red = last_step_page == i ? .1f : 0.f;
+			setLedColor(PAGE_LED, i, red, step_page == i, page_index_ == i);
 		}
 
 		// Pattern
@@ -202,18 +300,18 @@ struct GateSequencer : Module
 					clearPattern(i);
 				else
 					copyPattern(pattern_index_, i);
-		
+					
 				next_pattern_index_ = i;
 				break;
 			}
 			setLedColor(PATTERN_LED, i,
-						pattern_index_ == i && gate_out,
+						0,
 						pattern_index_ == i,
 						next_pattern_index_ == i);
 		}
 	}
 
-	void clearAllPatterns()
+	inline void clearAllPatterns()
 	{
 		for (int i = 0; i < MAX_PATTERN_LEN * PATTERNS; i++)
 		{
@@ -226,13 +324,13 @@ struct GateSequencer : Module
 		return gates[step_index + (pattern_index * MAX_PATTERN_LEN)];
 	}
 
-	void switchStep(int step_index)
+	inline void switchStep(int step_index)
 	{
 		int pattern_offset = pattern_index_ * MAX_PATTERN_LEN;
 		gates[step_index + pattern_offset] = !gates[step_index + pattern_offset];
 	}
 
-	void copyPattern(int from, int to)
+	inline void copyPattern(int from, int to)
 	{
 		int from_start = from * MAX_PATTERN_LEN;
 		int to_start = to * MAX_PATTERN_LEN;
@@ -243,14 +341,14 @@ struct GateSequencer : Module
 		pattern_len_[to] = pattern_len_[from];
 	}
 
-	void clearPattern(int patternI)
+	inline void clearPattern(int patternI)
 	{
 		int start = patternI * MAX_PATTERN_LEN;
 		for (int i = start; i < start + MAX_PATTERN_LEN; i++)
 			gates[i] = 0;
 	}
 
-	void copyPage(int pattern, int from, int to)
+	inline void copyPage(int pattern, int from, int to)
 	{
 		int from_start = (pattern * MAX_PATTERN_LEN) + (from * SEQUENCER_LEN);
 		int to_start = (pattern * MAX_PATTERN_LEN) + (to * SEQUENCER_LEN);
@@ -259,12 +357,12 @@ struct GateSequencer : Module
 			gates[i + to_start] = gates[i + from_start];
 	}
 
-	void clearPage(int pattern, int page)
+	inline void clearPage(int pattern, int page)
 	{
 		int start = (pattern * MAX_PATTERN_LEN) + (page * SEQUENCER_LEN);
 
 		for (int i = start; i < start + SEQUENCER_LEN; i++)
-			gates[i + start] = 0;
+			gates[i] = 0;
 	}
 
 	json_t *dataToJson() override
@@ -330,11 +428,11 @@ struct GateSequencer : Module
 		}
 	}
 
-	inline void setLedColor(int ledType, int index, bool r, bool g, bool b)
+	inline void setLedColor(int ledType, int index, float r, float g, float b)
 	{
-		lights[ledType + 0 + index * 3].setSmoothBrightness(r ? .5f : 0.f, UI_update_time);
-		lights[ledType + 1 + index * 3].setSmoothBrightness(g ? .5f : 0.f, UI_update_time);
-		lights[ledType + 2 + index * 3].setSmoothBrightness(b ? .5f : 0.f, UI_update_time);
+		lights[ledType + 0 + index * 3].setSmoothBrightness(r, UI_update_time);
+		lights[ledType + 1 + index * 3].setSmoothBrightness(g, UI_update_time);
+		lights[ledType + 2 + index * 3].setSmoothBrightness(b, UI_update_time);
 	}
 };
 
@@ -354,8 +452,7 @@ struct GateSequencerWidget : ModuleWidget
 			Vec(5.08, 23.09),
 			Vec(15.24, 23.09),
 			Vec(25.4, 23.09),
-			Vec(35.56, 23.09) 
-		};
+			Vec(35.56, 23.09)};
 
 		Vec grid[] = {
 			Vec(5.08, 38.148),
@@ -373,32 +470,33 @@ struct GateSequencerWidget : ModuleWidget
 			Vec(5.08, 68.266),
 			Vec(15.24, 68.266),
 			Vec(25.4, 68.266),
-			Vec(35.56, 68.266) 
-		};
+			Vec(35.56, 68.266)};
 
-		Vec patterns[] = { 
+		Vec patterns[] = {
 			Vec(5.08, 83.324),
 			Vec(15.24, 83.324),
 			Vec(25.4, 83.324),
-			Vec(35.56, 83.324)
-		};
-		
+			Vec(35.56, 83.324)};
+
 		for (int i = 0; i < 4; i++)
 		{
 			addParam(createParamCentered<RubberButton>(mm2px(pages[i]), module, GateSequencer::PAGE_PARAM + i));
-			addChild(createLightCentered<RubberButtonLed<RedGreenBlueLight>>(mm2px(pages[i]), module, GateSequencer::PAGE_LED + i * 3));
+			if (module)
+				addChild(createLightCentered<RubberButtonLed<RedGreenBlueLight>>(mm2px(pages[i]), module, GateSequencer::PAGE_LED + i * 3));
 		}
-		
+
 		for (int i = 0; i < 16; i++)
 		{
 			addParam(createParamCentered<RubberButton>(mm2px(grid[i]), module, GateSequencer::GRID_PARAM + i));
-			addChild(createLightCentered<RubberButtonLed<RedGreenBlueLight>>(mm2px(grid[i]), module, GateSequencer::GRID_LED + i * 3));
+			if (module)
+				addChild(createLightCentered<RubberButtonLed<RedGreenBlueLight>>(mm2px(grid[i]), module, GateSequencer::GRID_LED + i * 3));
 		}
 
 		for (int i = 0; i < 4; i++)
 		{
 			addParam(createParamCentered<RubberButton>(mm2px(patterns[i]), module, GateSequencer::PATTERN_PARAM + i));
-			addChild(createLightCentered<RubberButtonLed<RedGreenBlueLight>>(mm2px(patterns[i]), module, GateSequencer::PATTERN_LED + i * 3));
+			if (module)
+				addChild(createLightCentered<RubberButtonLed<RedGreenBlueLight>>(mm2px(patterns[i]), module, GateSequencer::PATTERN_LED + i * 3));
 		}
 
 		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.62, 113.441)), module, GateSequencer::CLOCK_INPUT));
@@ -446,7 +544,41 @@ struct GateSequencerWidget : ModuleWidget
 			}
 		};
 
+		struct ResetIndexItem : MenuItem
+		{
+			GateSequencer *module;
+			int index;
+			void onAction(const event::Action &e) override
+			{
+				module->reset_mode_index_ = index;
+			}
+		};
+
+		struct ResetItem : MenuItem
+		{
+			GateSequencer *module;
+			Menu *createChildMenu() override
+			{
+				Menu *menu = new Menu();
+				const std::string Labels[] = {
+					"Next clock input.",
+					"Instant"};
+				for (int i = 0; i < (int)LENGTHOF(Labels); i++)
+				{
+					ResetIndexItem *item = createMenuItem<ResetIndexItem>(Labels[i], CHECKMARK(module->reset_mode_index_ == i));
+					item->module = module;
+					item->index = i;
+					menu->addChild(item);
+				}
+				return menu;
+			}
+		};
+
 		menu->addChild(new MenuEntry);
+		ResetItem *resetItem = createMenuItem<ResetItem>("Reset mode");
+		resetItem->module = module;
+		menu->addChild(resetItem);
+
 		QuatizationItem *quatizationItem = createMenuItem<QuatizationItem>("Global quantization");
 		quatizationItem->module = module;
 		menu->addChild(quatizationItem);
