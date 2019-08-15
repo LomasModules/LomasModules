@@ -9,14 +9,6 @@
 
 // Find loading bug on mac
 
-// DONE Modulating sample parameter AND start/end point crashes rack.
-// DONE path_ does nothing.
-// DONE // Find bug in 1v/oct.
-// DONE Create a new LoadKnobWidget. Call loading function from there
-// DONE Looping
-// DONE Infinite loog decay/no decay or hold
-// DONE Trigger EOC when in loop mode
-
 struct AdvancedSampler : Module
 {
 	enum ParamIds
@@ -629,12 +621,10 @@ struct AdvancedSamplerWidget : ModuleWidget
 		holdItem->module = module;
 		menu->addChild(holdItem);
 
-		menu->addChild(new MenuEntry);
 		SaveItem *saveItem = createMenuItem<SaveItem>("Save recordings");
 		saveItem->module = module;
 		menu->addChild(saveItem);
 
-		menu->addChild(new MenuEntry);
 		InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation mode", "->");
 		interpolationItem->module = module;
 		menu->addChild(interpolationItem);
