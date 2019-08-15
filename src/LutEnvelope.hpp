@@ -67,16 +67,26 @@ struct LutEnvelope
 		increment_[2] = 0.0f;
 	}
 
-		                    //    Attack  Hold   Release  End
+	void envelopeAD(float attack, float decay)
+	{
+		float attackLambda = pow(LAMBDA_BASE, -attack) / MIN_TIME;
+		float decayLambda = pow(LAMBDA_BASE, -decay) / MIN_TIME;
+		configureADenvelope(attackLambda, decayLambda);
+	}
+	
+	void envelopeHD(float attack, float decay)
+	{
+		float attackLambda = pow(LAMBDA_BASE, -attack) / MIN_TIME;
+		float decayLambda = pow(LAMBDA_BASE, -decay) / MIN_TIME;
+		configureHDenvelope(attackLambda, decayLambda);
+	}
+
+	// Example of a AHR env  Attack   Hold   Release  End
 	float target_level_[4] = {1.0f,   1.0f,  0.0f,    0.0f};
 	float increment_[4]    = {1.0f,   1.0f,  1.0f,    0.0f};
 
 	private:
 	
-	void setStageTime(int stage, float seconds) { increment_[stage] = 1.0f / seconds; }
-	///void setStageTime(int stage, float seconds) { increment_[stage] = 1.0f / seconds; }
-	//x = 1 / seconds;
-	// 
 	float start_value_ = 0;
 	float value_ = 0;
 	float phase_ = 0;
