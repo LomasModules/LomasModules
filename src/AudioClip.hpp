@@ -59,27 +59,18 @@ struct AudioClip
 
 	void calculateWaveform()
 	{
-		// Crashesh rack when recording.
-		if (sampleCount_ < 4410)
-			return;
-
-		int samplesPerSlice = sampleCount_ / WAVEFORM_RESOLUTION;
-		int slice = 0;
-		float acumulator = 0;
-		int counter = 0;
-		for (unsigned int i = 0; i < sampleCount_; i++)
+		int pos = 0;
+		int samplesPerSlice = floorf(sampleCount_ / WAVEFORM_RESOLUTION);
+		for (int i = 0; i < WAVEFORM_RESOLUTION; i++)
 		{
-			counter++;
-			acumulator = acumulator + abs(left_channel_[i]);
-			if (counter >= samplesPerSlice)
+			float acumulator = 0;
+			for (int s = 0; s < samplesPerSlice; s++)
 			{
-				waveform_[slice] = acumulator / samplesPerSlice;
-				counter = 0;
-				acumulator = 0;
-				slice++;
+				acumulator += abs(left_channel_[pos]);
+				pos++;
 			}
+			waveform_[i] = acumulator / samplesPerSlice;
 		}
-		waveform_[WAVEFORM_RESOLUTION - 1] = 0;
 	}
 
 	void startRec(unsigned int sampleRate)
