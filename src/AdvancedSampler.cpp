@@ -213,7 +213,7 @@ struct AdvancedSampler : Module
 
 					// Put sample on SRC buffer
 					int index = phase_ * folder_reader_.audioClips_[clip_index_].getSampleCount();
-					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index, NONE);
+					in[i].samples[0] = folder_reader_.audioClips_[clip_index_].getSample(index, (Interpolations)interpolation_mode_index_);
 				}
 			}
 
