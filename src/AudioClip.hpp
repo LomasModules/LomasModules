@@ -16,15 +16,24 @@ struct AudioClip
 
 	float getSeconds() { return (float)sampleCount_ / (float)sampleRate_; }
 
-	float getSample(float index, Interpolations interpolation_mode)
+	float getSample(float index, Interpolations interpolation_mode, bool reverse)
 	{
 		index = clamp(index, 1.0f, (float)(sampleCount_ - 2));
 
 		int x1 = floorf(index);
-		int x0 = x1 - 1;
 		int x2 = x1 + 1;
+		int x0 = x1 - 1;
 		int x3 = x2 + 1;
 		float t = index - x1;
+
+		/*
+		if (reverse)
+		{
+			std::swap(x0, x3);
+			std::swap(x1, x2);
+			t = 1 - t;
+		}
+		*/
 
 		switch (interpolation_mode)
 		{
@@ -32,22 +41,17 @@ struct AudioClip
 			return left_channel_[x1];
 			break;
 		case LINEAR:
-			return crossfade(x1, x2, t);
-			break;
-		case CUBIC:
-			Cubic(left_channel_[x0], left_channel_[x1], left_channel_[x2], left_channel_[x3], t);
+			return crossfade(left_channel_[x1], left_channel_[x2], t);
 			break;
 		case HERMITE:
-			Hermite4pt3oX(left_channel_[x0], left_channel_[x1], left_channel_[x2], left_channel_[x3], t);
+			return Hermite4pt3oX(left_channel_[x0], left_channel_[x1], left_channel_[x2], left_channel_[x3], t);
 			break;
 		case BSPLINE:
-			BSpline(left_channel_[x0], left_channel_[x1], left_channel_[x2], left_channel_[x3], t);
+			return BSpline(left_channel_[x0], left_channel_[x1], left_channel_[x2], left_channel_[x3], t);
 			break;
 		default:
 			return left_channel_[x1];
 		}
-
-		return left_channel_[x1];
 	}
 
 	void unLoad()
@@ -95,8 +99,6 @@ struct AudioClip
 
 	void stopRec()
 	{
-		// We didnt add on startRec. Is fine like this.
-
 		// This so we don't have to clamp on interolation samplepos + 2
 		left_channel_.push_back(0);
 		left_channel_.push_back(0);
