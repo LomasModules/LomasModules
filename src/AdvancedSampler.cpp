@@ -3,163 +3,167 @@
 #include "LutEnvelope.hpp"
 #include "osdialog.h"
 #include "dirent.h"
-#include "FolderReader.hpp"
+#include "AudioClip.hpp"
 
 struct AdvancedSampler : Module
 {
-	enum ParamIds
-	{
-		LOAD_PARAM,
-		LOOP_PARAM,
-		PLAY_PARAM,
-		REC_PARAM,
-		SAMPLE_PARAM,
-		TUNE_PARAM,
-		ATTACK_PARAM,
-		START_PARAM,
-		END_PARAM,
-		DECAY_PARAM,
-		NUM_PARAMS
-	};
+    enum ParamIds
+    {
+        LOAD_PARAM,
+        LOOP_PARAM,
+        PLAY_PARAM,
+        REC_PARAM,
+        SAMPLE_PARAM,
+        TUNE_PARAM,
+        ATTACK_PARAM,
+        START_PARAM,
+        END_PARAM,
+        DECAY_PARAM,
+        NUM_PARAMS
+    };
 
-	enum InputIds
-	{
-		SAMPLE_INPUT,
-		TUNE_INPUT,
-		ATTACK_INPUT,
-		DECAY_INPUT,
-		START_INPUT,
-		END_INPUT,
-		AUDIO_INPUT,
-		REC_INPUT,
-		PLAY_INPUT,
-		NUM_INPUTS
-	};
+    enum InputIds
+    {
+        SAMPLE_INPUT,
+        TUNE_INPUT,
+        ATTACK_INPUT,
+        DECAY_INPUT,
+        START_INPUT,
+        END_INPUT,
+        AUDIO_INPUT,
+        REC_INPUT,
+        PLAY_INPUT,
+        NUM_INPUTS
+    };
 
-	enum OutputIds
-	{
-		EOC_OUTPUT,
-		AUDIO_OUTPUT,
-		NUM_OUTPUTS
-	};
+    enum OutputIds
+    {
+        EOC_OUTPUT,
+        AUDIO_OUTPUT,
+        NUM_OUTPUTS
+    };
 
-	enum LightIds
-	{
-		ENUMS(STATUS_LED, 3),
-		NUM_LIGHTS
-	};
+    enum LightIds
+    {
+        ENUMS(STATUS_LED, 3),
+        NUM_LIGHTS
+    };
 
-	AdvancedSampler()
-	{
-		config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
-		configParam(SAMPLE_PARAM, 0.f, 1.f, 0.f, "Sample select");
-		configParam(TUNE_PARAM, -24.f, 24.f, 0.f, "Tune", " semitones");
-		configParam(ATTACK_PARAM, 0.0f, 1.f, 0.0f, "Attack", " ms", LAMBDA_BASE);
-		configParam(DECAY_PARAM, 0.0f, 1.f, 1.0f, "Decay", " ms", LAMBDA_BASE);
-		configParam(START_PARAM, 0.0f, 1.f, 0.f, "Start point", " %", 0.0f, 100);
-		configParam(END_PARAM, 0.f, 1.f, 1.f, "End poin", " %", 0.0f, 100);
-		configParam(LOAD_PARAM, 0.f, 1.f, 0.f, "Open folder");
-		configParam(PLAY_PARAM, 0.f, 1.f, 0.f, "Play");
-		configParam(LOOP_PARAM, 0.f, 1.f, 0.f, "Loop");
-		configParam(REC_PARAM, 0.f, 1.f, 0.f, "Record");
-	}
+    AdvancedSampler()
+    {
+        config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
+        configParam(SAMPLE_PARAM, 0.f, 1.f, 0.f, "Sample select");
+        configParam(TUNE_PARAM, -24.f, 24.f, 0.f, "Tune", " semitones");
+        configParam(ATTACK_PARAM, 0.0f, 1.f, 0.0f, "Attack", " ms", LAMBDA_BASE);
+        configParam(DECAY_PARAM, 0.0f, 1.f, 1.0f, "Decay", " ms", LAMBDA_BASE);
+        configParam(START_PARAM, 0.0f, 1.f, 0.f, "Start point", " %", 0.0f, 100);
+        configParam(END_PARAM, 0.f, 1.f, 1.f, "End poin", " %", 0.0f, 100);
+        configParam(LOAD_PARAM, 0.f, 1.f, 0.f, "Open folder");
+        configParam(PLAY_PARAM, 0.f, 1.f, 0.f, "Play");
+        configParam(LOOP_PARAM, 0.f, 1.f, 0.f, "Loop");
+        configParam(REC_PARAM, 0.f, 1.f, 0.f, "Record");
+    }
 
     json_t *dataToJson() override
-	{
-		json_t *rootJ = json_object();
+    {
+        json_t *rootJ = json_object();
 
         std::string path = getSamplePath(fileIndex_);
-		// File path
-		json_object_set_new(rootJ, "path", json_string(path.c_str()));
+        // File path
+        json_object_set_new(rootJ, "path", json_string(path.c_str()));
 
-		// Looping
-		json_object_set_new(rootJ, "loop", json_boolean(looping_));
+        // Looping
+        json_object_set_new(rootJ, "loop", json_boolean(looping_));
 
         // Save
-		json_object_set_new(rootJ, "save", json_boolean(save_recordings_));
+        json_object_set_new(rootJ, "save", json_boolean(save_recordings_));
 
         // Hold envelope
-		json_object_set_new(rootJ, "hold", json_boolean(hold_));
+        json_object_set_new(rootJ, "hold", json_boolean(hold_));
 
-		// Playing
-		json_object_set_new(rootJ, "play", json_boolean(playing_));
+        // Playing
+        json_object_set_new(rootJ, "play", json_boolean(playing_));
 
-		// Index. Prevents playing from sample 0 when reloading patch.
-		json_object_set_new(rootJ, "phase", json_real(phase_));
-		
-		// Interpolation
-		json_object_set_new(rootJ, "interpolation", json_integer(interpolation_mode_index_));
+        // Index. Prevents playing from sample 0 when reloading patch.
+        json_object_set_new(rootJ, "phase", json_real(phase_));
 
-		return rootJ;
-	}
+        // Interpolation
+        json_object_set_new(rootJ, "interpolation", json_integer(interpolation_mode_index_));
 
-	void dataFromJson(json_t *rootJ) override
-	{
-		// File path
-		json_t *pathJ = json_object_get(rootJ, "path");
-		if (pathJ)
-		{
-			std::string path = json_string_value(pathJ);
-			setPath(path);
-		}
+        return rootJ;
+    }
 
-		// Looping
-		json_t *loopJ = json_object_get(rootJ, "loop");
-		if (loopJ)
-			looping_ = json_boolean_value(loopJ);
+    void dataFromJson(json_t *rootJ) override
+    {
+        // File path
+        json_t *pathJ = json_object_get(rootJ, "path");
+        if (pathJ)
+        {
+            std::string path = json_string_value(pathJ);
+            setPath(path);
+        }
+
+        // Looping
+        json_t *loopJ = json_object_get(rootJ, "loop");
+        if (loopJ)
+            looping_ = json_boolean_value(loopJ);
 
         // Save
-		json_t *saveJ = json_object_get(rootJ, "save");
-		if (saveJ)
-			save_recordings_ = json_boolean_value(saveJ);
+        json_t *saveJ = json_object_get(rootJ, "save");
+        if (saveJ)
+            save_recordings_ = json_boolean_value(saveJ);
 
         // Hold
-		json_t *holdJ = json_object_get(rootJ, "hold");
-		if (holdJ)
-			hold_ = json_boolean_value(holdJ);
+        json_t *holdJ = json_object_get(rootJ, "hold");
+        if (holdJ)
+            hold_ = json_boolean_value(holdJ);
 
-		// Playing
-		json_t *playJ = json_object_get(rootJ, "play");
-		if (playJ)
-			playing_ = json_boolean_value(playJ);
+        // Playing
+        json_t *playJ = json_object_get(rootJ, "play");
+        if (playJ)
+            playing_ = json_boolean_value(playJ);
 
-		// Index
-		json_t *phaseJ = json_object_get(rootJ, "phase");
-		if (phaseJ) {
-			phase_ = (float)json_real_value(phaseJ);
+        // Index
+        json_t *phaseJ = json_object_get(rootJ, "phase");
+        if (phaseJ) {
+            phase_ = (float)json_real_value(phaseJ);
             audio_index_ = phase_ * clip_.getSampleCount();
         }
 
-		// Interpolation
-		json_t *interpolationJ = json_object_get(rootJ, "interpolation");
-		if (interpolationJ)
-			interpolation_mode_index_ = json_integer_value(interpolationJ);
-	}
+        // Interpolation
+        json_t *interpolationJ = json_object_get(rootJ, "interpolation");
+        if (interpolationJ)
+            interpolation_mode_index_ = json_integer_value(interpolationJ);
+    }
 
-	void onReset() override
-	{
-		playing_ = false;
-	}
+    void onReset() override
+    {
+        playing_ = false;
+    }
 
 
-	void process(const ProcessArgs &args) override
-	{
-		// Update UI 1 /60 times per second.
-		if (ui_timer_.process(args.sampleTime) > UI_update_time)
-			updateUI(args.sampleRate);
+    void process(const ProcessArgs &args) override
+    {
+        // Update UI 1 /60 times per second.
+        if (ui_timer_.process(args.sampleTime) > UI_update_time)
+            updateUI(args.sampleRate);
 
-		// Recording start/stop
-		if (inputs[AUDIO_INPUT].isConnected())
-			if (rec_input_trigger_.process(inputs[REC_INPUT].getVoltage()))
-				switchRecState(args.sampleRate);
+        // Recording start/stop
+        if (inputs[AUDIO_INPUT].isConnected()) {
+            if (inputs[REC_INPUT].isConnected()) {
+                if (rec_input_trigger_.process(inputs[REC_INPUT].getVoltage())) {
+                    switchRecState(args.sampleRate);
+                }
+            }
+        }
 
-		if (recording_)
-		{
-			recording_ = clip_.rec(inputs[AUDIO_INPUT].getVoltage() / 10.0f);
+        if (recording_)
+        {
+            recording_ = clip_.rec(inputs[AUDIO_INPUT].getVoltage() / 10.0f);
             outputs[AUDIO_OUTPUT].setVoltage(0);
             outputs[EOC_OUTPUT].setVoltage(0);
-			return;
-		}
+            return;
+        }
 
         bool eoc = false;
         float audio_out = 0;
@@ -235,70 +239,70 @@ struct AdvancedSampler : Module
         }
 
         if (eoc)
-			eoc_pulse_.trigger();
+            eoc_pulse_.trigger();
 
-        outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime));
+        outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.f : 0.f);
         outputs[AUDIO_OUTPUT].setVoltage(audio_out);
     }
 
     inline void updateUI(float sampleRate)
-	{
-		ui_timer_.reset();
-    
+    {
+        ui_timer_.reset();
+
         phase_ = audio_index_ / clip_.getSampleCount();
 
-		// Recording start/stop
-		if (inputs[AUDIO_INPUT].isConnected())
-			if (rec_button_trigger_.process(params[REC_PARAM].getValue()))
-				switchRecState(sampleRate);
+        // Recording start/stop
+        if (inputs[AUDIO_INPUT].isConnected())
+            if (rec_button_trigger_.process(params[REC_PARAM].getValue()))
+                switchRecState(sampleRate);
 
-		if (recording_)
-		{
-			clip_.calculateWaveform();
-			return;
-		}
+        if (recording_)
+        {
+            clip_.calculateWaveform();
+            return;
+        }
 
-		if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
-			trigger();
+        if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
+            trigger();
 
-		if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
-			looping_ = !looping_;
-	}
+        if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
+            looping_ = !looping_;
+    }
 
     inline void switchRecState(float sampleRate)
-	{
-		recording_ = !recording_;
-		if (recording_)
-		{
-			clip_.startRec(sampleRate);
-			phase_start_ = 0;
-			phase_end_ = 1;
-			playing_ = false;
-		}
-		else // !recording
-		{
-			clip_.stopRec();
-			if (save_recordings_ && directory_ != "")
-			{
+    {
+        recording_ = !recording_;
+        if (recording_)
+        {
+            clip_.startRec(sampleRate);
+            phase_start_ = 0;
+            phase_end_ = 1;
+            playing_ = false;
+        }
+        else // !recording
+        {
+            clip_.stopRec();
+            if (save_recordings_ && directory_ != "")
+            {
                 float samples_in_folder = (float)baseNames_.size();
 
                 std::string save_baseName = "Record" + std::to_string((int)(samples_in_folder + 1));
                 std::string save_filename = save_baseName + ".wav";
-		        std::string save_path = directory_ + "/" + save_filename;
+                std::string save_path = directory_ + "/" + save_filename;
 
-				clip_.saveToDisk(save_path);
+                clip_.saveToDisk(save_path);
                 setPath(save_path);
-				
-			}
-		}
-	}
+
+            }
+        }
+    }
 
     inline void trigger()
-	{
-		env_.tigger();
-		audio_index_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f) * (clip_.getSampleCount() - 1);
-		playing_ = true;
-	}
+    {
+        env_.tigger();
+        audio_index_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f) * (clip_.getSampleCount() - 1);
+        playing_ = true;
+    }
 
     inline void setLedColor(int ledType, int index, float r, float g, float b)
     {
@@ -308,11 +312,11 @@ struct AdvancedSampler : Module
     }
 
     // Sample loading
-    
+
     void setPath(std::string path) {
 
         playing_ = false;
-        
+
         std::string directory = string::directory(path);
 
         //stop();
@@ -360,7 +364,7 @@ struct AdvancedSampler : Module
 
         if (baseNames_.size() == 0)
             return "LOAD SAMPLE";
-        
+
         return displayNames_[fileIndex_];
     }
 
@@ -405,7 +409,7 @@ struct AdvancedSampler : Module
             }
         }
     }
-    
+
     unsigned int findBaseNameIndex(std::string fileName)
     {
         for (unsigned int i = 0; i < baseNames_.size(); i++)
@@ -425,12 +429,12 @@ struct AdvancedSampler : Module
         const int overSize = characterCount - maxCharacters;
         return text.substr(0, characterCount - overSize);
     }
-    
+
     void getNewSavePath(std::string& save_path)
-	{
-		std::string save_fileName = "Record" + std::to_string(baseNames_.size());
-		save_path = directory_ + "/" + save_fileName + ".wav";
-	}
+    {
+        std::string save_fileName = "Record" + std::to_string(baseNames_.size());
+        save_path = directory_ + "/" + save_fileName + ".wav";
+    }
 
     LutEnvelope env_;
     dsp::PulseGenerator eoc_pulse_;
@@ -449,7 +453,7 @@ struct AdvancedSampler : Module
     bool looping_ = false;
     bool recording_ = false;
     bool playing_ = false;
-    
+
     float phase_start_ = 0;
     float phase_end_ = 0;
     float audio_index_ = 0;
@@ -464,8 +468,8 @@ struct AdvancedSampler : Module
     AudioClip clip_;
 
     // UI
-	dsp::Timer ui_timer_;
-	dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
+    dsp::Timer ui_timer_;
+    dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
 };
 
 static void selectPath(AdvancedSampler *module)
@@ -661,93 +665,94 @@ struct AdvancedSamplerWidget : ModuleWidget
 
     void appendContextMenu(Menu *menu) override
     {
-    	AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(this->module);
+        AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(this->module);
 
-    	struct InterpolationIndexItem : MenuItem
-    	{
-    		AdvancedSampler *module;
-    		int index;
-    		void onAction(const event::Action &e) override
-    		{
-    			module->interpolation_mode_index_ = index;
-    		}
-    	};
+        struct InterpolationIndexItem : MenuItem
+        {
+            AdvancedSampler *module;
+            int index;
+            void onAction(const event::Action &e) override
+            {
+                module->interpolation_mode_index_ = index;
+            }
+        };
 
-    	struct InterpolationItem : MenuItem
-    	{
-    		AdvancedSampler *module;
-    		Menu *createChildMenu() override
-    		{
-    			Menu *menu = new Menu();
-    			const std::string interpolationLabels[] = {
-    				"None",
-    				"Linear",
-    				"Hermite",
-    				"BSPLine"};
-    			for (int i = 0; i < (int)LENGTHOF(interpolationLabels); i++)
-    			{
-    				InterpolationIndexItem *item = createMenuItem<InterpolationIndexItem>(interpolationLabels[i], CHECKMARK(module->interpolation_mode_index_ == i));
-    				item->module = module;
-    				item->index = i;
-    				menu->addChild(item);
-    			}
-    			return menu;
-    		}
-    	};
-
-        struct EnvelopeIndexItem : MenuItem
-    	{
-    		AdvancedSampler *module;
-    		bool hold;
-    		void onAction(const event::Action &e) override
-    		{
-    			module->hold_ = hold;
-    		}
-    	};
-
-        struct HoldItem : MenuItem {
-    		AdvancedSampler *module;
+        struct InterpolationItem : MenuItem
+        {
+            AdvancedSampler *module;
             Menu *createChildMenu() override
             {
                 Menu *menu = new Menu();
-    			const std::string envelopeLabels[] = {
-    				"Attack / Decay",
-                    "Hold / Decay"
-    			};
-                for (int i = 0; i < (int)LENGTHOF(envelopeLabels); i++)
-    			{
-                    EnvelopeIndexItem *item = createMenuItem<EnvelopeIndexItem>(envelopeLabels[i], CHECKMARK(module->hold_ == i));
-    				item->module = module;
-    				item->hold = i;
-    				menu->addChild(item);
+                const std::string interpolationLabels[] = {
+                    "None",
+                    "Linear",
+                    "Hermite",
+                    "BSPLine"
+                };
+                for (int i = 0; i < (int)LENGTHOF(interpolationLabels); i++)
+                {
+                    InterpolationIndexItem *item = createMenuItem<InterpolationIndexItem>(interpolationLabels[i], CHECKMARK(module->interpolation_mode_index_ == i));
+                    item->module = module;
+                    item->index = i;
+                    menu->addChild(item);
                 }
                 return menu;
             }
-    	};
+        };
 
-    	struct SaveItem : MenuItem {
-    		AdvancedSampler *module;
-    		void onAction(const event::Action &e) override {
-    			module->save_recordings_ ^= true;
-    		}
-    		void step() override {
-    			rightText = CHECKMARK(module->save_recordings_);
-    		}
-    	};
+        struct EnvelopeIndexItem : MenuItem
+        {
+            AdvancedSampler *module;
+            bool hold;
+            void onAction(const event::Action &e) override
+            {
+                module->hold_ = hold;
+            }
+        };
 
-    	menu->addChild(new MenuEntry);
-    	
+        struct HoldItem : MenuItem {
+            AdvancedSampler *module;
+            Menu *createChildMenu() override
+            {
+                Menu *menu = new Menu();
+                const std::string envelopeLabels[] = {
+                    "Attack / Decay",
+                    "Hold / Decay"
+                };
+                for (int i = 0; i < (int)LENGTHOF(envelopeLabels); i++)
+                {
+                    EnvelopeIndexItem *item = createMenuItem<EnvelopeIndexItem>(envelopeLabels[i], CHECKMARK(module->hold_ == i));
+                    item->module = module;
+                    item->hold = i;
+                    menu->addChild(item);
+                }
+                return menu;
+            }
+        };
+
+        struct SaveItem : MenuItem {
+            AdvancedSampler *module;
+            void onAction(const event::Action &e) override {
+                module->save_recordings_ ^= true;
+            }
+            void step() override {
+                rightText = CHECKMARK(module->save_recordings_);
+            }
+        };
+
+        menu->addChild(new MenuEntry);
+
         HoldItem *holdItem = createMenuItem<HoldItem>("Envelope", ">");
-    	holdItem->module = module;
-    	menu->addChild(holdItem);
+        holdItem->module = module;
+        menu->addChild(holdItem);
 
-    	InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation", ">");
-    	interpolationItem->module = module;
-    	menu->addChild(interpolationItem);
+        InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation", ">");
+        interpolationItem->module = module;
+        menu->addChild(interpolationItem);
 
         SaveItem *saveItem = createMenuItem<SaveItem>("Save recordings");
-    	saveItem->module = module;
-    	menu->addChild(saveItem);
+        saveItem->module = module;
+        menu->addChild(saveItem);
     }
 };
 
