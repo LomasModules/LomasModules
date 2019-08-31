@@ -15,17 +15,17 @@
     {
       "slug": "AdvancedSampler",
       "name": "Advanced Sampler",
-      "description": "",
+      "description": "Monophonic sampler.",
       "tags": [
-        "Sampler"
+        "Sampler","Drums"
       ]
     },
     {
       "slug": "GateSequencer",
       "name": "Gate Sequencer",
-      "description": "",
+      "description": "Gate sequencer with 4 patterns and up to 64 steps. Pattern length",
       "tags": [
-        "Sequencer"
+        "Sequencer","Expander"
       ]
     }
   ]
