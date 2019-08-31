@@ -3,7 +3,6 @@ enum Interpolations
 {
 	NONE,
 	LINEAR,
-	CUBIC,
 	HERMITE,
 	BSPLINE,
 };
@@ -18,16 +17,6 @@ inline float BSpline(const float P0, const float P1, const float P2, const float
 	point += (P0 + 4 * P1 + P2) / 6;
 
 	return point;
-}
-
-inline float Cubic(float x0, float x1, float x2, float x3, float t)
-{
-	float a0, a1, a2, a3;
-	a0 = x3 - x2 - x0 + x1;
-	a1 = x0 - x1 - a0;
-	a2 = x2 - x0;
-	a3 = x1;
-	return (a0 * (t * t * t)) + (a1 * (t * t)) + (a2 * t) + (a3);
 }
 
 inline float Hermite4pt3oX(float x0, float x1, float x2, float x3, float t)
