@@ -1,7 +1,7 @@
 {
   "slug": "LomasModules",
   "name": "Lomas Modules",
-  "version": "1.0.2",
+  "version": "1.0.7",
   "license": "BSD-3-Clause",
   "brand": "Lomas",
   "author": "Guillermo Moreno",
@@ -17,7 +17,8 @@
       "name": "Advanced Sampler",
       "description": "Monophonic sampler.",
       "tags": [
-        "Sampler","Drums"
+        "Sampler",
+        "Drums"
       ]
     },
     {
@@ -25,8 +26,15 @@
       "name": "Gate Sequencer",
       "description": "Gate sequencer with 4 patterns and up to 64 steps. Pattern length",
       "tags": [
-        "Sequencer","Expander"
+        "Sequencer",
+        "Expander"
       ]
+    },
+    {
+      "slug": "ChannelStrip",
+      "name": "ChannelStrip",
+      "description": "",
+      "tags": []
     }
   ]
 }
