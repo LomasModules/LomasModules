@@ -70,7 +70,7 @@ struct AdvancedSampler : Module
     {
         json_t *rootJ = json_object();
 
-        std::string path = getSamplePath(fileIndex_);
+        std::string path = getClipPath(fileIndex_);
         // File path
         json_object_set_new(rootJ, "path", json_string(path.c_str()));
 
@@ -145,11 +145,11 @@ struct AdvancedSampler : Module
 
     void process(const ProcessArgs &args) override
     {
-        // Update UI 1 /60 times per second.
+        // Allways update UI 1 /60 times per second.
         if (ui_timer_.process(args.sampleTime) > UI_update_time)
             updateUI(args.sampleRate);
 
-        // Recording start/stop
+        // Rec CV input
         if (inputs[AUDIO_INPUT].isConnected()) {
             if (inputs[REC_INPUT].isConnected()) {
                 if (rec_input_trigger_.process(inputs[REC_INPUT].getVoltage())) {
@@ -166,20 +166,21 @@ struct AdvancedSampler : Module
             return;
         }
 
-        setSampleIndex();
-
-        if (!clip_cache_[fileIndex_].isLoaded())
-            return;
-
-        bool eoc = false;
-        float audio_out = 0;
-
+        // Play CV input
         if (inputs[PLAY_INPUT].isConnected())
             if (input_trigger_.process(inputs[PLAY_INPUT].getVoltage()))
                 trigger();
 
+        // Sample CV input
+        loadClipFromCvKnob();
+
+        // START / END CV inputs
         phase_end_ = clamp(params[END_PARAM].getValue() + inputs[END_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
         phase_start_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
+
+        // Audio       
+        bool eoc = false;
+        float audio_out = 0;
 
         if (playing_)
         {
@@ -209,7 +210,6 @@ struct AdvancedSampler : Module
                     {
                         // Update read positon
                         audio_index_ = reverse ? audio_index_ - freq : audio_index_ + freq;
-
                         // Stop at start or end depending on direction
                         bool isLastSample = reverse ? audio_index_ <= last_sample : audio_index_ >= last_sample;
 
@@ -342,7 +342,7 @@ struct AdvancedSampler : Module
         std::string filename = string::filename(path);
         std::string baseName = string::filenameBase(filename);
         float samples_in_folder = (float)baseNames_.size();
-        float file_index = (float)findBaseNameIndex(baseName);
+        float file_index = (float)findTextOnBaseNames(baseName);
         float sample_param = file_index / clamp(samples_in_folder - 1, 0.f, samples_in_folder);
         params[SAMPLE_PARAM].setValue(sample_param);
 
@@ -350,36 +350,8 @@ struct AdvancedSampler : Module
         fileIndex_ = (int)(sample_value * (baseNames_.size() - 1));
 
         if (!clip_cache_[fileIndex_].isLoaded())
-            clip_cache_[fileIndex_].load(getSamplePath(fileIndex_));
+            clip_cache_[fileIndex_].load(getClipPath(fileIndex_));
     }
-
-    inline std::string getSamplePath(int index)
-    {
-        if (directory_ == "")
-            return "";
-
-        return directory_ + "/" + baseNames_[fileIndex_] + ".wav";
-    }
-
-    inline void setSampleIndex()
-    {
-        if (clip_cache_.size() == 0)
-            return;
-            
-        float sample_value = clamp((inputs[SAMPLE_INPUT].getVoltage() / 10) + params[SAMPLE_PARAM].getValue(), 0.f, 1.f);
-        int new_file_index = (int)(sample_value * (baseNames_.size() - 1));
-        
-        if (fileIndex_ == new_file_index)
-            return;
-        
-        fileIndex_ = new_file_index;
-
-        if (!clip_cache_[fileIndex_].isLoaded())
-            clip_cache_[fileIndex_].load(getSamplePath(fileIndex_));
-    }
-    
-
-
 
     void scanDirectory(std::string directory)
     {
@@ -421,10 +393,35 @@ struct AdvancedSampler : Module
         }
     }
 
-    unsigned int findBaseNameIndex(std::string fileName)
+    inline void loadClipFromCvKnob()
+    {
+        if (clip_cache_.size() == 0)
+            return;
+            
+        float sample_value = clamp((inputs[SAMPLE_INPUT].getVoltage() / 10) + params[SAMPLE_PARAM].getValue(), 0.f, 1.f);
+        int new_file_index = (int)(sample_value * (baseNames_.size() - 1));
+        
+        if (fileIndex_ == new_file_index)
+            return;
+        
+        fileIndex_ = new_file_index;
+
+        if (!clip_cache_[fileIndex_].isLoaded())
+            clip_cache_[fileIndex_].load(getClipPath(fileIndex_));
+    }
+
+    inline std::string getClipPath(int index)
+    {
+        if (directory_ == "")
+            return "";
+
+        return directory_ + "/" + baseNames_[fileIndex_] + ".wav";
+    }
+
+    unsigned int findTextOnBaseNames(std::string text)
     {
         for (unsigned int i = 0; i < baseNames_.size(); i++)
-            if (fileName == baseNames_[i])
+            if (text == baseNames_[i])
                 return i;
 
         return 0;
@@ -459,7 +456,6 @@ struct AdvancedSampler : Module
         return clip_cache_[fileIndex_].waveform_;
     }
 
-
     LutEnvelope env_;
     dsp::PulseGenerator eoc_pulse_;
     dsp::SchmittTrigger input_trigger_, rec_input_trigger_;
@@ -478,7 +474,7 @@ struct AdvancedSampler : Module
     float phase_start_ = 0;
     float phase_end_ = 0;
     float audio_index_ = 0;
-    float phase_;
+    float phase_ = 0;
 
     int fileIndex_ = 0;
     std::string directory_ = "";
@@ -535,7 +531,7 @@ struct LoadKnob : RoundGrayKnob
         AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
 
         if (module)
-            module->setSampleIndex();
+            module->loadClipFromCvKnob();
 
         RoundGrayKnob::onChange(e);
     }
