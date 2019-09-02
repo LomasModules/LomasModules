@@ -320,13 +320,11 @@ struct AdvancedSampler : Module
 
     // Sample loading
 
-    void setPath(std::string path) {
-
+    void setPath(std::string path) 
+    {
         playing_ = false;
 
         std::string directory = string::directory(path);
-
-        //stop();
 
         if (path == "") {
             directory_ = "";
