@@ -29,12 +29,6 @@
         "Sequencer",
         "Expander"
       ]
-    },
-    {
-      "slug": "ChannelStrip",
-      "name": "ChannelStrip",
-      "description": "",
-      "tags": []
     }
   ]
 }
