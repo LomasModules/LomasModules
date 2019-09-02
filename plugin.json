@@ -1,7 +1,11 @@
 {
   "slug": "LomasModules",
   "name": "Lomas Modules",
+<<<<<<< HEAD
   "version": "1.0.7",
+=======
+  "version": "1.0.6",
+>>>>>>> ff0a19bcbe8816e0c808b8f98b0860fee6f652b8
   "license": "BSD-3-Clause",
   "brand": "Lomas",
   "author": "Guillermo Moreno",
