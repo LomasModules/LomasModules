@@ -62,6 +62,8 @@ struct AdvancedSampler : Module
         configParam(PLAY_PARAM, 0.f, 1.f, 0.f, "Play");
         configParam(LOOP_PARAM, 0.f, 1.f, 0.f, "Loop");
         configParam(REC_PARAM, 0.f, 1.f, 0.f, "Record");
+        AudioClip empty_clip;
+        clip_cache_.push_back(empty_clip);
     }
 
     json_t *dataToJson() override
@@ -127,7 +129,7 @@ struct AdvancedSampler : Module
         json_t *phaseJ = json_object_get(rootJ, "phase");
         if (phaseJ) {
             phase_ = (float)json_real_value(phaseJ);
-            audio_index_ = phase_ * clip_.getSampleCount();
+            audio_index_ = phase_ * clip_cache_[fileIndex_].getSampleCount();
         }
 
         // Interpolation
@@ -159,13 +161,16 @@ struct AdvancedSampler : Module
 
         if (recording_)
         {
-            recording_ = clip_.rec(inputs[AUDIO_INPUT].getVoltage() / 10.0f);
+            recording_ = clip_cache_[fileIndex_].rec(inputs[AUDIO_INPUT].getVoltage() / 10.0f);
             outputs[AUDIO_OUTPUT].setVoltage(0);
             outputs[EOC_OUTPUT].setVoltage(0);
             return;
         }
 
         setSampleIndex();
+
+        if (!clip_cache_[fileIndex_].isLoaded())
+            return;
 
         bool eoc = false;
         float audio_out = 0;
@@ -197,7 +202,7 @@ struct AdvancedSampler : Module
                 bool reverse = phase_start_ > phase_end_;
                 float tune = clamp(params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 12, -96.f, 96.f);
                 float freq = std::pow(2, tune / 12.0f);
-                float last_sample = phase_end_ * clip_.getSampleCount();
+                float last_sample = phase_end_ * clip_cache_[fileIndex_].getSampleCount();
                 // Audio process
                 for (int i = 0; i < 24; i++)
                 {
@@ -214,17 +219,17 @@ struct AdvancedSampler : Module
                             eoc = true;
 
                             if (looping_)
-                                audio_index_ = phase_start_ * clip_.getSampleCount();
+                                audio_index_ = phase_start_ * clip_cache_[fileIndex_].getSampleCount();
                             else
                                 playing_ = false;
                         }
 
                         // Put sample on SRC buffer
-                        in[i].samples[0] = clip_.getSample(audio_index_, (Interpolations)interpolation_mode_index_, reverse);
+                        in[i].samples[0] = clip_cache_[fileIndex_].getSample(audio_index_, (Interpolations)interpolation_mode_index_, reverse);
                     }
                 }
 
-                src_.setRates(clip_.getSampleRate(), args.sampleRate);
+                src_.setRates(clip_cache_[fileIndex_].getSampleRate(), args.sampleRate);
 
                 int inLen = 24;
                 int outLen = outputBuffer_.capacity();
@@ -240,8 +245,8 @@ struct AdvancedSampler : Module
             }
         }
 
-        //if (eoc)
-        //    eoc_pulse_.trigger();
+        if (eoc)
+            eoc_pulse_.trigger();
 
         outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.f : 0.f);
         outputs[AUDIO_OUTPUT].setVoltage(audio_out);
@@ -251,7 +256,7 @@ struct AdvancedSampler : Module
     {
         ui_timer_.reset();
 
-        phase_ = audio_index_ / clip_.getSampleCount();
+        phase_ = audio_index_ / clip_cache_[fileIndex_].getSampleCount();
 
         // Recording start/stop
         if (inputs[AUDIO_INPUT].isConnected())
@@ -260,7 +265,7 @@ struct AdvancedSampler : Module
 
         if (recording_)
         {
-            clip_.calculateWaveform();
+            clip_cache_[fileIndex_].calculateWaveform();
             return;
         }
 
@@ -276,14 +281,14 @@ struct AdvancedSampler : Module
         recording_ = !recording_;
         if (recording_)
         {
-            clip_.startRec(sampleRate);
+            clip_cache_[fileIndex_].startRec(sampleRate);
             phase_start_ = 0;
             phase_end_ = 1;
             playing_ = false;
         }
         else // !recording
         {
-            clip_.stopRec();
+            clip_cache_[fileIndex_].stopRec();
             if (save_recordings_ && directory_ != "")
             {
                 float samples_in_folder = (float)baseNames_.size();
@@ -292,7 +297,7 @@ struct AdvancedSampler : Module
                 std::string save_filename = save_baseName + ".wav";
                 std::string save_path = directory_ + "/" + save_filename;
 
-                clip_.saveToDisk(save_path);
+                clip_cache_[fileIndex_].saveToDisk(save_path);
                 setPath(save_path);
 
             }
@@ -302,7 +307,7 @@ struct AdvancedSampler : Module
     inline void trigger()
     {
         env_.tigger();
-        audio_index_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f) * (clip_.getSampleCount() - 1);
+        audio_index_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f) * (clip_cache_[fileIndex_].getSampleCount() - 1);
         playing_ = true;
     }
 
@@ -345,7 +350,7 @@ struct AdvancedSampler : Module
         setSampleIndex();
     }
 
-    std::string getSamplePath(int index)
+    inline std::string getSamplePath(int index)
     {
         if (baseNames_.size() == 0)
             return "";
@@ -355,17 +360,23 @@ struct AdvancedSampler : Module
 
     void setSampleIndex()
     {
+        if (directory_ == "")
+            return;
+            
         float sample_value = clamp((inputs[SAMPLE_INPUT].getVoltage() / 10) + params[SAMPLE_PARAM].getValue(), 0.f, 1.f);
         int new_file_index = (int)(sample_value * (baseNames_.size() - 1));
         
         if (fileIndex_ == new_file_index)
             return;
         
-        eoc_pulse_.trigger(0.01);
         fileIndex_ = new_file_index;
-        clip_.load(getSamplePath(fileIndex_));
-    }
 
+        if (!clip_cache_[fileIndex_].isLoaded())
+            clip_cache_[fileIndex_].load(getSamplePath(fileIndex_));
+
+        clip_cache_[fileIndex_] = clip_cache_[fileIndex_];
+    }
+    
     std::string getClipName()
     {
         if (recording_)
@@ -379,7 +390,7 @@ struct AdvancedSampler : Module
 
     inline float *getClipWaveform()
     {
-        return clip_.waveform_;
+        return clip_cache_[fileIndex_].waveform_;
     }
 
     void scanDirectory(std::string directory)
@@ -396,6 +407,8 @@ struct AdvancedSampler : Module
 
         baseNames_.clear();
         displayNames_.clear();
+        pathNames_.clear();
+        clip_cache_.clear();
 
         while ((ent = readdir(dir)) != NULL)
         {
@@ -414,6 +427,9 @@ struct AdvancedSampler : Module
                     std::string displayname = shorten_string(basename);
                     baseNames_.push_back(basename);
                     displayNames_.push_back(displayname);
+                    pathNames_.push_back(directory_ + "/" + basename + ".wav");
+                    AudioClip new_clip;
+                    clip_cache_.push_back(new_clip);
                 }
             }
         }
@@ -470,8 +486,10 @@ struct AdvancedSampler : Module
     std::string directory_ = "";
     std::vector<std::string> baseNames_;
     std::vector<std::string> displayNames_;
+    std::vector<std::string> pathNames_;
 
-    AudioClip clip_;
+    //AudioClip clip_;
+    std::vector<AudioClip> clip_cache_;
 
     // UI
     dsp::Timer ui_timer_;
