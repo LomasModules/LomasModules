@@ -378,21 +378,8 @@ struct AdvancedSampler : Module
             clip_cache_[fileIndex_].load(getSamplePath(fileIndex_));
     }
     
-    std::string getClipName()
-    {
-        if (recording_)
-            return "RECORDING";
 
-        if (displayNames_.size() == 0)
-            return "LOAD SAMPLE";
 
-        return displayNames_[fileIndex_];
-    }
-
-    inline float *getClipWaveform()
-    {
-        return clip_cache_[fileIndex_].waveform_;
-    }
 
     void scanDirectory(std::string directory)
     {
@@ -454,11 +441,24 @@ struct AdvancedSampler : Module
         return text.substr(0, characterCount - overSize);
     }
 
-    void getNewSavePath(std::string& save_path)
+    // LCD
+
+    std::string getClipName()
     {
-        std::string save_fileName = "Record" + std::to_string(baseNames_.size());
-        save_path = directory_ + "/" + save_fileName + ".wav";
+        if (recording_)
+            return "RECORDING";
+
+        if (displayNames_.size() == 0)
+            return "LOAD SAMPLE";
+
+        return displayNames_[fileIndex_];
     }
+
+    inline float *getClipWaveform()
+    {
+        return clip_cache_[fileIndex_].waveform_;
+    }
+
 
     LutEnvelope env_;
     dsp::PulseGenerator eoc_pulse_;
