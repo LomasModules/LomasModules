@@ -143,7 +143,6 @@ struct AdvancedSampler : Module
         playing_ = false;
     }
 
-
     void process(const ProcessArgs &args) override
     {
         // Update UI 1 /60 times per second.
@@ -347,20 +346,24 @@ struct AdvancedSampler : Module
         float sample_param = file_index / clamp(samples_in_folder - 1, 0.f, samples_in_folder);
         params[SAMPLE_PARAM].setValue(sample_param);
 
-        setSampleIndex();
+        float sample_value = clamp((inputs[SAMPLE_INPUT].getVoltage() / 10) + params[SAMPLE_PARAM].getValue(), 0.f, 1.f);
+        fileIndex_ = (int)(sample_value * (baseNames_.size() - 1));
+
+        if (!clip_cache_[fileIndex_].isLoaded())
+            clip_cache_[fileIndex_].load(getSamplePath(fileIndex_));
     }
 
     inline std::string getSamplePath(int index)
     {
-        if (baseNames_.size() == 0)
+        if (directory_ == "")
             return "";
 
         return directory_ + "/" + baseNames_[fileIndex_] + ".wav";
     }
 
-    void setSampleIndex()
+    inline void setSampleIndex()
     {
-        if (directory_ == "")
+        if (clip_cache_.size() == 0)
             return;
             
         float sample_value = clamp((inputs[SAMPLE_INPUT].getVoltage() / 10) + params[SAMPLE_PARAM].getValue(), 0.f, 1.f);
@@ -373,8 +376,6 @@ struct AdvancedSampler : Module
 
         if (!clip_cache_[fileIndex_].isLoaded())
             clip_cache_[fileIndex_].load(getSamplePath(fileIndex_));
-
-        clip_cache_[fileIndex_] = clip_cache_[fileIndex_];
     }
     
     std::string getClipName()
@@ -382,7 +383,7 @@ struct AdvancedSampler : Module
         if (recording_)
             return "RECORDING";
 
-        if (baseNames_.size() == 0)
+        if (displayNames_.size() == 0)
             return "LOAD SAMPLE";
 
         return displayNames_[fileIndex_];
@@ -407,7 +408,6 @@ struct AdvancedSampler : Module
 
         baseNames_.clear();
         displayNames_.clear();
-        pathNames_.clear();
         clip_cache_.clear();
 
         while ((ent = readdir(dir)) != NULL)
@@ -427,7 +427,6 @@ struct AdvancedSampler : Module
                     std::string displayname = shorten_string(basename);
                     baseNames_.push_back(basename);
                     displayNames_.push_back(displayname);
-                    pathNames_.push_back(directory_ + "/" + basename + ".wav");
                     AudioClip new_clip;
                     clip_cache_.push_back(new_clip);
                 }
@@ -482,13 +481,9 @@ struct AdvancedSampler : Module
     float phase_;
 
     int fileIndex_ = 0;
-
     std::string directory_ = "";
     std::vector<std::string> baseNames_;
     std::vector<std::string> displayNames_;
-    std::vector<std::string> pathNames_;
-
-    //AudioClip clip_;
     std::vector<AudioClip> clip_cache_;
 
     // UI
