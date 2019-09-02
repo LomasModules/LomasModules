@@ -165,6 +165,8 @@ struct AdvancedSampler : Module
             return;
         }
 
+        setSampleIndex();
+
         bool eoc = false;
         float audio_out = 0;
 
@@ -238,8 +240,8 @@ struct AdvancedSampler : Module
             }
         }
 
-        if (eoc)
-            eoc_pulse_.trigger();
+        //if (eoc)
+        //    eoc_pulse_.trigger();
 
         outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.f : 0.f);
         outputs[AUDIO_OUTPUT].setVoltage(audio_out);
@@ -353,7 +355,14 @@ struct AdvancedSampler : Module
 
     void setSampleIndex()
     {
-        fileIndex_ = clamp((int)(params[SAMPLE_PARAM].getValue() * (baseNames_.size() - 1)), 0, baseNames_.size() - 1);
+        float sample_value = clamp((inputs[SAMPLE_INPUT].getVoltage() / 10) + params[SAMPLE_PARAM].getValue(), 0.f, 1.f);
+        int new_file_index = (int)(sample_value * (baseNames_.size() - 1));
+        
+        if (fileIndex_ == new_file_index)
+            return;
+        
+        eoc_pulse_.trigger(0.01);
+        fileIndex_ = new_file_index;
         clip_.load(getSamplePath(fileIndex_));
     }
 
@@ -444,11 +453,8 @@ struct AdvancedSampler : Module
     dsp::SampleRateConverter<1> src_;
     dsp::DoubleRingBuffer<dsp::Frame<1>, 256> outputBuffer_;
 
-    dsp::SampleRateConverter<1> src_pitch_;
-    dsp::DoubleRingBuffer<dsp::Frame<1>, 256> outputBuffer_pitch_;
-
     int interpolation_mode_index_ = 3;
-    bool save_recordings_ = false;
+    bool save_recordings_ = true;
     bool hold_ = false;
     bool looping_ = false;
     bool recording_ = false;
