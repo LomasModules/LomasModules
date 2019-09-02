@@ -269,7 +269,8 @@ struct AdvancedSampler : Module
         }
 
         if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
-            trigger();
+            if (clip_cache_[fileIndex_].isLoaded())
+                trigger();
 
         if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
             looping_ = !looping_;
@@ -395,7 +396,7 @@ struct AdvancedSampler : Module
 
     inline void loadClipFromCvKnob()
     {
-        if (clip_cache_.size() == 0)
+        if (directory_ == "")
             return;
             
         float sample_value = clamp((inputs[SAMPLE_INPUT].getVoltage() / 10) + params[SAMPLE_PARAM].getValue(), 0.f, 1.f);
