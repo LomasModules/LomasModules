@@ -206,6 +206,7 @@ struct AdvancedSampler : Module
                 // Audio process
                 for (int i = 0; i < 24; i++)
                 {
+                    in[i].samples[0] = 0;
                     if (playing_)
                     {
                         // Update read positon
@@ -246,7 +247,8 @@ struct AdvancedSampler : Module
 
         if (eoc)
             eoc_pulse_.trigger();
-
+        
+        
         outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.f : 0.f);
         outputs[AUDIO_OUTPUT].setVoltage(audio_out);
     }
@@ -306,6 +308,9 @@ struct AdvancedSampler : Module
 
     inline void trigger()
     {
+        if (!clip_cache_[fileIndex_].isLoaded())
+            return;
+            
         env_.tigger();
         audio_index_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f) * (clip_cache_[fileIndex_].getSampleCount() - 1);
         playing_ = true;
