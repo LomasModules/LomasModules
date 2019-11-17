@@ -540,8 +540,10 @@ struct SamplerDisplay : TransparentWidget
         nvgStroke(args.vg);
 
         // Loop shadow
-        float min = std::min(module->getPhaseStart(), module->getPhaseEnd());
-        float max = std::max(module->getPhaseStart(), module->getPhaseEnd());
+        float phase_start = module->getPhaseStart();
+        float phase_end   = module->getPhaseEnd();
+        float min = std::min(phase_start, phase_end);
+        float max = std::max(phase_start, phase_end);
         const NVGcolor shadow_color = nvgTransRGBA(backgroundColor, 128);
         nvgBeginPath(args.vg);
         nvgRect(args.vg, waveform_origin.x, waveform_origin.y - half_waveform_size.y, waveform_size.x * min, waveform_size.y);
@@ -568,15 +570,16 @@ struct SamplerDisplay : TransparentWidget
         
         // Draw start end positions.
         nvgBeginPath(args.vg);
-        nvgMoveTo(args.vg, waveform_origin.x + module->getPhaseStart() * waveform_size.x, waveform_origin.y - half_waveform_size.y);
-        nvgLineTo(args.vg, waveform_origin.x + module->getPhaseStart() * waveform_size.x, waveform_origin.y + half_waveform_size.y);
-        nvgMoveTo(args.vg, waveform_origin.x + module->getPhaseEnd()   * waveform_size.x, waveform_origin.y - half_waveform_size.y);
-        nvgLineTo(args.vg, waveform_origin.x + module->getPhaseEnd()   * waveform_size.x, waveform_origin.y + half_waveform_size.y);
+        nvgMoveTo(args.vg, waveform_origin.x + phase_start * waveform_size.x, waveform_origin.y - half_waveform_size.y);
+        nvgLineTo(args.vg, waveform_origin.x + phase_start * waveform_size.x, waveform_origin.y + half_waveform_size.y);
+        nvgMoveTo(args.vg, waveform_origin.x + phase_end   * waveform_size.x, waveform_origin.y - half_waveform_size.y);
+        nvgLineTo(args.vg, waveform_origin.x + phase_end   * waveform_size.x, waveform_origin.y + half_waveform_size.y);
         
         // Draw play position.
         if (module->playing_) {
-            nvgMoveTo(args.vg, waveform_origin.x + module->getPhase()  * waveform_size.x, waveform_origin.y - half_waveform_size.y);
-            nvgLineTo(args.vg, waveform_origin.x + module->getPhase()  * waveform_size.x, waveform_origin.y + half_waveform_size.y);
+            float phase = module->getPhase();
+            nvgMoveTo(args.vg, waveform_origin.x + phase * waveform_size.x, waveform_origin.y - half_waveform_size.y);
+            nvgLineTo(args.vg, waveform_origin.x + phase * waveform_size.x, waveform_origin.y + half_waveform_size.y);
         }
 
         nvgStrokeColor(args.vg, waveform_stroke_color);
