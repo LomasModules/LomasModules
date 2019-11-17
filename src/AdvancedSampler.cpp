@@ -699,14 +699,24 @@ struct AdvancedSamplerWidget : ModuleWidget
             }
         };
 
-        struct TrimItem : MenuItem {
+        struct LowCpuItem : MenuItem {
+            AdvancedSampler *module;
+            void onAction(const event::Action &e) override {
+                module->low_cpu_ ^= true;
+            }
+            void step() override {
+                rightText = module->low_cpu_ ? "On" : "Off";
+            }
+        };
+
+        struct TrimClipItem : MenuItem {
             AdvancedSampler *module;
             void onAction(const event::Action &e) override {
                 module->trimSample();
             }
         };
 
-        struct SaveItem : MenuItem {
+        struct SaveClipItem : MenuItem {
             AdvancedSampler *module;
             void onAction(const event::Action &e) override {
                 module->saveClip();
@@ -731,13 +741,21 @@ struct AdvancedSamplerWidget : ModuleWidget
 
         menu->addChild(new MenuSeparator);
 
-        TrimItem *trimItem = createMenuItem<TrimItem>("Trim sample");
+        LowCpuItem *lowCpuItem = createMenuItem<LowCpuItem>("Low cpu mode");
+        lowCpuItem->module = module;
+        menu->addChild(lowCpuItem);
+        
+        menu->addChild(new MenuSeparator);
+
+        TrimClipItem *trimItem = createMenuItem<TrimClipItem>("Trim sample");
         trimItem->module = module;
         menu->addChild(trimItem);
 
-        SaveItem *saveItem = createMenuItem<SaveItem>("Save sample");
+        SaveClipItem *saveItem = createMenuItem<SaveClipItem>("Save sample");
         saveItem->module = module;
         menu->addChild(saveItem);
+
+        
 
     }
 };
