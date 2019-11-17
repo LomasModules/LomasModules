@@ -3,362 +3,390 @@
 #include "LutEnvelope.hpp"
 #include "osdialog.h"
 #include "dirent.h"
+#include "samplerate.h"
 #include "AudioClip.hpp"
 
-struct AdvancedSampler : Module
-{
-    enum ParamIds
-    {
+struct AdvancedSampler : Module {
+    enum ParamIds {
+        SAMPLE_PARAM,
+        TUNE_PARAM,
+        ATTACK_PARAM,
+        DECAY_PARAM,
+        START_PARAM,
+        END_PARAM,
+
         LOAD_PARAM,
         LOOP_PARAM,
         PLAY_PARAM,
         REC_PARAM,
-        SAMPLE_PARAM,
-        TUNE_PARAM,
-        ATTACK_PARAM,
-        START_PARAM,
-        END_PARAM,
-        DECAY_PARAM,
         NUM_PARAMS
     };
 
-    enum InputIds
-    {
+    enum InputIds {
         SAMPLE_INPUT,
         TUNE_INPUT,
         ATTACK_INPUT,
         DECAY_INPUT,
         START_INPUT,
         END_INPUT,
+
         AUDIO_INPUT,
         REC_INPUT,
         PLAY_INPUT,
         NUM_INPUTS
     };
 
-    enum OutputIds
-    {
+    enum OutputIds {
         EOC_OUTPUT,
         AUDIO_OUTPUT,
         NUM_OUTPUTS
     };
 
-    enum LightIds
-    {
-        ENUMS(STATUS_LED, 3),
+    enum LightIds {
+        PLAY_LIGHT,
+        LOOP_LIGHT,
+        REC_LIGHT_RED,
+        REC_LIGHT_BLUE,
         NUM_LIGHTS
     };
 
-    AdvancedSampler()
-    {
+    double read_position_ = 0;
+    bool playing_ = false;
+    bool low_cpu_ = false;
+    bool looping_ = false;
+    bool recording_ = false;
+    bool hold_envelope_ = false;
+    bool exponential_start_end_ = false;
+    bool slice_ = false;
+    int slice_division_ = 16;
+    int interpolation_mode_index_ = 2;
+
+    LutEnvelope env_;
+    dsp::PulseGenerator eoc_pulse_;
+    dsp::SchmittTrigger input_trigger_, rec_input_trigger_;
+    dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
+    dsp::Timer light_timer_;
+    
+    // Sample rate conversion
+    dsp::SampleRateConverter<2> src_vcv_;
+    dsp::DoubleRingBuffer<dsp::Frame<2>, 256> output_buffer_;
+
+    AdvancedSampler() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
         configParam(SAMPLE_PARAM, 0.f, 1.f, 0.f, "Sample select");
-        configParam(TUNE_PARAM, -24.f, 24.f, 0.f, "Tune", " semitones");
-        configParam(ATTACK_PARAM, 0.0f, 1.f, 0.0f, "Attack", " ms", LAMBDA_BASE);
-        configParam(DECAY_PARAM, 0.0f, 1.f, 1.0f, "Decay", " ms", LAMBDA_BASE);
-        configParam(START_PARAM, 0.0f, 1.f, 0.f, "Start point", " %", 0.0f, 100);
-        configParam(END_PARAM, 0.f, 1.f, 1.f, "End poin", " %", 0.0f, 100);
+        configParam(TUNE_PARAM,   -2.f, 2.f, 0.f, "Tune", " semitones", 0.0f, 12.0f);
+        configParam(ATTACK_PARAM, 0.f, 1.f, 0.f, "Attack");
+        configParam(DECAY_PARAM,  0.f, 1.f, 1.f, "Decay");
+        configParam(START_PARAM,  0.f, 1.f, 0.f, "Start point", " %", 0.0f, 100);
+        configParam(END_PARAM,  0.f, 1.f, 1.f, "End poin", " %", 0.0f, 100);
         configParam(LOAD_PARAM, 0.f, 1.f, 0.f, "Open folder");
         configParam(PLAY_PARAM, 0.f, 1.f, 0.f, "Play");
         configParam(LOOP_PARAM, 0.f, 1.f, 0.f, "Loop");
-        configParam(REC_PARAM, 0.f, 1.f, 0.f, "Record");
-        AudioClip empty_clip;
-        clip_cache_.push_back(empty_clip);
+        configParam(REC_PARAM,  0.f, 1.f, 0.f, "Record");
+        initializeClipCache();
     }
 
-    json_t *dataToJson() override
-    {
+    json_t *dataToJson() override {
         json_t *rootJ = json_object();
-
-        std::string path = getClipPath(fileIndex_);
-        // File path
-        json_object_set_new(rootJ, "path", json_string(path.c_str()));
-
-        // Looping
+        json_object_set_new(rootJ, "directory", json_string(directory_.c_str()));
         json_object_set_new(rootJ, "loop", json_boolean(looping_));
-
-        // Save
-        json_object_set_new(rootJ, "save", json_boolean(save_recordings_));
-
-        // Hold envelope
-        json_object_set_new(rootJ, "hold", json_boolean(hold_));
-
-        // Playing
-        json_object_set_new(rootJ, "play", json_boolean(playing_));
-
-        // Index. Prevents playing from sample 0 when reloading patch.
-        json_object_set_new(rootJ, "phase", json_real(phase_));
-
-        // Interpolation
-        json_object_set_new(rootJ, "interpolation", json_integer(interpolation_mode_index_));
-
+        json_object_set_new(rootJ, "hold_envelope", json_boolean(hold_envelope_));
+        json_object_set_new(rootJ, "playing", json_boolean(playing_));
+        json_object_set_new(rootJ, "read_position", json_real(read_position_));
+        json_object_set_new(rootJ, "interpolation_mode", json_integer(interpolation_mode_index_));
+        json_object_set_new(rootJ, "slice", json_boolean(slice_));
         return rootJ;
     }
 
-    void dataFromJson(json_t *rootJ) override
-    {
-        // File path
-        json_t *pathJ = json_object_get(rootJ, "path");
-        if (pathJ)
-        {
-            std::string path = json_string_value(pathJ);
-            setPath(path);
+    void dataFromJson(json_t *rootJ) override {
+        json_t *directoryJ = json_object_get(rootJ, "directory");
+        if (directoryJ) {
+            std::string directory = json_string_value(directoryJ);
+            setDirectory(directory, false);
         }
 
-        // Looping
         json_t *loopJ = json_object_get(rootJ, "loop");
         if (loopJ)
             looping_ = json_boolean_value(loopJ);
 
-        // Save
-        json_t *saveJ = json_object_get(rootJ, "save");
-        if (saveJ)
-            save_recordings_ = json_boolean_value(saveJ);
-
-        // Hold
-        json_t *holdJ = json_object_get(rootJ, "hold");
+        json_t *holdJ = json_object_get(rootJ, "hold_envelope");
         if (holdJ)
-            hold_ = json_boolean_value(holdJ);
+            hold_envelope_ = json_boolean_value(holdJ);
 
-        // Playing
-        json_t *playJ = json_object_get(rootJ, "play");
-        if (playJ)
-            playing_ = json_boolean_value(playJ);
+        json_t *audio_indexJ = json_object_get(rootJ, "read_position");
+        if (audio_indexJ)
+            read_position_ = (float)json_real_value(audio_indexJ);
 
-        // Index
-        json_t *phaseJ = json_object_get(rootJ, "phase");
-        if (phaseJ) {
-            phase_ = (float)json_real_value(phaseJ);
-            audio_index_ = phase_ * clip_cache_[fileIndex_].getSampleCount();
-        }
-
-        // Interpolation
-        json_t *interpolationJ = json_object_get(rootJ, "interpolation");
+        json_t *interpolationJ = json_object_get(rootJ, "interpolation_mode");
         if (interpolationJ)
             interpolation_mode_index_ = json_integer_value(interpolationJ);
+
+        json_t *playJ = json_object_get(rootJ, "playing");
+        if (playJ && directory_ != "")
+            playing_ = json_boolean_value(playJ);
+
+        json_t *sliceJ = json_object_get(rootJ, "slice");
+        if (sliceJ)
+            slice_ = json_boolean_value(sliceJ);
     }
 
-    void onReset() override
-    {
+    void onReset() override {
         playing_ = false;
     }
 
-    void process(const ProcessArgs &args) override
-    {
-        // Allways update UI 1 /60 times per second.
-        if (ui_timer_.process(args.sampleTime) > UI_update_time)
-            updateUI(args.sampleRate);
+    void process(const ProcessArgs &args) override {
+        
+        if (!clip_cache_[getClipIndex()].isLoaded())
+            return;
 
-        // Rec CV input
-        if (inputs[AUDIO_INPUT].isConnected()) {
-            if (inputs[REC_INPUT].isConnected()) {
-                if (rec_input_trigger_.process(inputs[REC_INPUT].getVoltage())) {
-                    switchRecState(args.sampleRate);
-                }
-            }
+        // Update lights
+        light_timer_.process(args.sampleTime);
+        if (light_timer_.process(args.sampleTime) > UI_update_time) {
+            light_timer_.reset();
+            lights[LOOP_LIGHT].setSmoothBrightness(looping_  ? .5f : 0.0f, UI_update_time);
+            lights[PLAY_LIGHT].setSmoothBrightness(playing_  ? .5f : 0.0f, UI_update_time);
+            lights[REC_LIGHT_RED].setSmoothBrightness(recording_ ? .5f : 0.0f, UI_update_time);
         }
 
-        if (recording_)
-        {
-            recording_ = clip_cache_[fileIndex_].rec(inputs[AUDIO_INPUT].getVoltage() / 10.0f);
+        // Rec button
+        if (inputs[AUDIO_INPUT].isConnected())
+            if (rec_button_trigger_.process(params[REC_PARAM].getValue()))
+                switchRec(args.sampleRate);
+
+        // Rec input trigger.
+        if (inputs[AUDIO_INPUT].isConnected())
+            if (rec_input_trigger_.process(inputs[REC_INPUT].getVoltage()))
+                switchRec(args.sampleRate);
+
+        // Recording process.
+        if (recording_) {
+            recording_ = clip_cache_[getClipIndex()].rec(inputs[AUDIO_INPUT].getVoltage() / 5.0f);
+
+            // Handle max record time.
+            if (!recording_)
+                stopRecord();
+
             outputs[AUDIO_OUTPUT].setVoltage(0);
             outputs[EOC_OUTPUT].setVoltage(0);
             return;
         }
 
-        // Play CV input
+        // Play button & cv.
+        if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
+            trigger();
+
         if (inputs[PLAY_INPUT].isConnected())
             if (input_trigger_.process(inputs[PLAY_INPUT].getVoltage()))
                 trigger();
 
-        // Sample CV input
-        loadClipFromCvKnob();
-
-        // START / END CV inputs
-        phase_end_ = clamp(params[END_PARAM].getValue() + inputs[END_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
-        phase_start_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f);
-
-        // Audio       
-        bool eoc = false;
-        float audio_out = 0;
-
-        if (playing_)
-        {
-            // Envelope
-            float attack = clamp(params[ATTACK_PARAM].getValue() + (inputs[ATTACK_INPUT].getVoltage() * .1f), 0.f, 1.f);
-            float decay = clamp(params[DECAY_PARAM].getValue() + (inputs[DECAY_INPUT].getVoltage() * .1f), 0.f, 1.f);
-            float attackLambda = pow(LAMBDA_BASE, -attack) / MIN_TIME;
-            float decayLambda = decay == 1.0f && looping_ ? 0.0f : pow(LAMBDA_BASE, -decay) / MIN_TIME;
-
-            if (hold_)
-                env_.configureHDenvelope(attackLambda, decayLambda); // Hold & Decay
-            else
-                env_.configureADenvelope(attackLambda, decayLambda); // Attack & Decay
-
-            // Sample rate conversion
-            if (outputBuffer_.empty())
-            {
-                dsp::Frame<1> in[24];
-                bool reverse = phase_start_ > phase_end_;
-                float tune = clamp(params[TUNE_PARAM].getValue() + inputs[TUNE_INPUT].getVoltage() * 12, -96.f, 96.f);
-                float freq = std::pow(2, tune / 12.0f);
-                float last_sample = phase_end_ * clip_cache_[fileIndex_].getSampleCount();
-                // Audio process
-                for (int i = 0; i < 24; i++)
-                {
-                    in[i].samples[0] = 0;
-                    if (playing_)
-                    {
-                        // Update read positon
-                        audio_index_ = reverse ? audio_index_ - freq : audio_index_ + freq;
-                        // Stop at start or end depending on direction
-                        bool isLastSample = reverse ? audio_index_ <= last_sample : audio_index_ >= last_sample;
-
-                        if (isLastSample)
-                        {
-                            eoc = true;
-
-                            if (looping_)
-                                audio_index_ = phase_start_ * clip_cache_[fileIndex_].getSampleCount();
-                            else
-                                playing_ = false;
-                        }
-
-                        // Put sample on SRC buffer
-                        in[i].samples[0] = clip_cache_[fileIndex_].getSample(audio_index_, (Interpolations)interpolation_mode_index_, reverse);
-                    }
-                }
-
-                src_.setRates(clip_cache_[fileIndex_].getSampleRate(), args.sampleRate);
-
-                int inLen = 24;
-                int outLen = outputBuffer_.capacity();
-                src_.process(in, &inLen, outputBuffer_.endData(), &outLen);
-                outputBuffer_.endIncr(outLen);
-            }
-
-            // Audio output
-            if (!outputBuffer_.empty())
-            {
-                dsp::Frame<1> frame = outputBuffer_.shift();
-                audio_out = frame.samples[0] * env_.process(args.sampleTime) * 10;
-            }
-        }
-
-        if (eoc)
-            eoc_pulse_.trigger();
-        
-        
-        outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.f : 0.f);
-        outputs[AUDIO_OUTPUT].setVoltage(audio_out);
-    }
-
-    inline void updateUI(float sampleRate)
-    {
-        ui_timer_.reset();
-
-        phase_ = audio_index_ / clip_cache_[fileIndex_].getSampleCount();
-
-        // Recording start/stop
-        if (inputs[AUDIO_INPUT].isConnected())
-            if (rec_button_trigger_.process(params[REC_PARAM].getValue()))
-                switchRecState(sampleRate);
-
-        if (recording_)
-        {
-            clip_cache_[fileIndex_].calculateWaveform();
-            return;
-        }
-
-        if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
-            if (clip_cache_[fileIndex_].isLoaded())
-                trigger();
-
+        // Loop button & cv.
         if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
             looping_ = !looping_;
-    }
 
-    inline void switchRecState(float sampleRate)
-    {
-        recording_ = !recording_;
-        if (recording_)
-        {
-            clip_cache_[fileIndex_].startRec(sampleRate);
-            phase_start_ = 0;
-            phase_end_ = 1;
-            playing_ = false;
+        if (!playing_) {
+            outputs[AUDIO_OUTPUT].setVoltage(0);
+            outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.0f : 0.0f);
         }
-        else // !recording
-        {
-            clip_cache_[fileIndex_].stopRec();
-            if (save_recordings_ && directory_ != "")
-            {
-                float samples_in_folder = (float)baseNames_.size();
 
-                std::string save_baseName = "Record" + std::to_string((int)(samples_in_folder + 1));
-                std::string save_filename = save_baseName + ".wav";
-                std::string save_path = directory_ + "/" + save_filename;
+        // Audio processing.
+        const int buffer_size = 16;
+        if (output_buffer_.empty()) {
+            // Prepare some variables
+            int clip_index = getClipIndex();
+            float start_phase = getPhaseStart();
+            float end_phase = getPhaseEnd();
+            float min_phase = std::min(start_phase, end_phase);
+            float max_phase = std::max(start_phase, end_phase);
+            bool forward = end_phase >= start_phase;
+            float tune = getParamModulated(TUNE_PARAM, 1.0f, -4.0f, 4.0f);
+            
+            if (low_cpu_)
+				tune += log2f(clip_cache_[clip_index].getSampleRate() * args.sampleTime);
+            
+            float freq = dsp::approxExp2_taylor5((tune) + 20) / 1048576 * clip_cache_[clip_index].getDt();
+            
+            
+            
+            unsigned int sample_count = clip_cache_[clip_index].getSampleCount();
 
-                clip_cache_[fileIndex_].saveToDisk(save_path);
-                setPath(save_path);
+            // Before EOC pulse was procesed inside the output buffer like the envelope. Was not in sync because of the samplerate changes.
+            // Buffer to render the audio clip & EOC pulse. 0 is audio channel 1 is eoc pulse.
+            dsp::Frame<2> input_buffer[buffer_size];
+            for (int i = 0; i < buffer_size; i++) {
+                if (playing_) {
+                    // Advance read position.
+                    read_position_ += forward ? freq : -freq;
+                    // Warp or stop.
+                    bool last_sample = (forward && read_position_ >= max_phase) || (!forward && read_position_ < min_phase);
+                    if (last_sample && playing_) {
+                        playing_ = looping_;
+                        read_position_ = getPhaseStart();
+                        eoc_pulse_.trigger(clip_cache_[getClipIndex()].getSampleRate() / 1000.0f);
+                    }
+                }
+                // Fill audio & eoc buffers.
+                input_buffer[i].samples[0] = playing_
+                                             ? clip_cache_[getClipIndex()].getSample(read_position_ * sample_count, (Interpolations)interpolation_mode_index_, !forward)
+                                             : 0; // Initialize
 
+                input_buffer[i].samples[1] = eoc_pulse_.process(1.0f) ? 10.0f : 0.0f;
+            }
+
+            if (low_cpu_) {
+                for (int i = 0; i < buffer_size; i++) {
+                    output_buffer_.push(input_buffer[i]);
+                }
+            }
+            else {
+                // Sample rate conversion.
+                src_vcv_.setRates(clip_cache_[getClipIndex()].getSampleRate(), args.sampleRate);
+                int inLen = buffer_size;
+                int outLen = output_buffer_.capacity();
+                src_vcv_.process(input_buffer, &inLen, output_buffer_.endData(), &outLen);
+                output_buffer_.endIncr(outLen);
             }
         }
-    }
 
-    inline void trigger()
-    {
-        if (!clip_cache_[fileIndex_].isLoaded())
-            return;
-            
-        env_.tigger();
-        audio_index_ = clamp(params[START_PARAM].getValue() + inputs[START_INPUT].getVoltage() / 10.f, 0.0f, 1.0f) * (clip_cache_[fileIndex_].getSampleCount() - 1);
-        playing_ = true;
-    }
+        // Read from src buffer
+        if (!output_buffer_.empty()) {
+            // Amp envelope.
+            const float attack = getParamModulated(ATTACK_PARAM, 0.1f);
+            const float decay = getParamModulated(DECAY_PARAM, 0.1f);
 
-    inline void setLedColor(int ledType, int index, float r, float g, float b)
-    {
-        lights[ledType + 0 + index * 3].setSmoothBrightness(r, UI_update_time);
-        lights[ledType + 1 + index * 3].setSmoothBrightness(g, UI_update_time);
-        lights[ledType + 2 + index * 3].setSmoothBrightness(b, UI_update_time);
-    }
+            if (hold_envelope_)
+                env_.envelopeHD(attack, decay); // Hold & Decay
+            else
+                env_.envelopeAD(attack, decay); // Attack & Decay
 
-    // Sample loading
+            // Get frame from src buffer.
+            dsp::Frame<2> frame = output_buffer_.shift();
 
-    void setPath(std::string path) 
-    {
-        playing_ = false;
-
-        std::string directory = string::directory(path);
-
-        if (path == "") {
-            directory_ = "";
-            return;
+            // Set module outputs.
+            outputs[AUDIO_OUTPUT].setVoltage(frame.samples[0] * 5 * env_.process(args.sampleTime));
+            outputs[EOC_OUTPUT].setVoltage(frame.samples[1]);
         }
-
-        directory_ = directory;
-        scanDirectory(directory_);
-
-        if (baseNames_.size() == 0)
-            return;
-
-        // Move sample knob to sample position.
-        std::string filename = string::filename(path);
-        std::string baseName = string::filenameBase(filename);
-        float samples_in_folder = (float)baseNames_.size();
-        float file_index = (float)findTextOnBaseNames(baseName);
-        float sample_param = file_index / clamp(samples_in_folder - 1, 0.f, samples_in_folder);
-        params[SAMPLE_PARAM].setValue(sample_param);
-
-        float sample_value = clamp((inputs[SAMPLE_INPUT].getVoltage() / 10) + params[SAMPLE_PARAM].getValue(), 0.f, 1.f);
-        fileIndex_ = (int)(sample_value * (baseNames_.size() - 1));
-
-        if (!clip_cache_[fileIndex_].isLoaded())
-            clip_cache_[fileIndex_].load(getClipPath(fileIndex_));
     }
 
-    void scanDirectory(std::string directory)
-    {
+    inline void trigger() {
+        playing_ = true;
+        env_.tigger(true);
+        read_position_ = getPhaseStart();
+    }
+
+    void startRecord(int sampleRate) {
+        recording_ = true;
+        playing_ = false;
+        clip_count_ = clamp(clip_count_ + 1, 0, MAX_FILES-1);
+        params[SAMPLE_PARAM].setValue(1.0f);
+        clip_names_[getClipIndex()] = "Recording...";
+        clip_cache_[getClipIndex()].startRec(sampleRate);
+    }
+
+    void stopRecord() {
+        const std::string save_baseName = "Record";
+        clip_names_[getClipIndex()] = save_baseName;
+        clip_cache_[getClipIndex()].calculateWaveform();
+    }
+
+    void switchRec(int sampleRate) {
+        if (!recording_)
+            startRecord(sampleRate);
+        else
+            stopRecord();
+    }
+
+    void saveClip() {
+        if (directory_ != "") {
+            const std::string save_baseName = clip_names_[getClipIndex()] + "_" + std::to_string((int)(clip_count_ + 1));
+            const std::string save_filename = save_baseName + ".wav";
+            const std::string save_path = directory_ + "/" + save_filename;
+            clip_cache_[getClipIndex()].saveToDisk(save_path);
+            setPath(save_path, true);
+        }
+    }
+
+    inline float getParamModulated(ParamIds param, float modulation_multiplier = 0.1f, float min_value = 0.0f, float max_value = 1.0f) {
+        return clamp(params[param].getValue() + (inputs[param].getVoltage() * modulation_multiplier), min_value, max_value);
+    }
+
+    inline float calculatePhaseParam(float param) {
+        if (slice_)
+            return nearbyint(param * slice_division_) / slice_division_;
+
+        // Fine tune start end
+        if (clip_cache_[getClipIndex()].getSeconds() < 2.0f)
+            return powf(param, 2);
+
+        return param;
+    }
+
+    inline float getPhaseStart() {
+        return calculatePhaseParam(getParamModulated(START_PARAM, 0.1f));
+    }
+
+    inline float getPhaseEnd() {
+        return calculatePhaseParam(getParamModulated(END_PARAM, 0.1f));
+    }
+
+    inline float getPhase() {
+        return read_position_;
+    }
+
+    inline int getClipIndex() {
+        float sample_param = getParamModulated(SAMPLE_PARAM, 0.1f);
+        return sample_param * clamp(clip_count_ - 1, 0, clip_count_);
+    }
+
+    inline std::string getClipName() {
+        return clip_names_[getClipIndex()];
+    }
+
+    inline float* getClipWaveform() {
+        return clip_cache_[getClipIndex()].waveform_;
+    }
+
+    void trimSample() {
+        playing_ = false;
+        float start_phase = getPhaseStart();
+        float end_phase = getPhaseEnd();
+
+        if (start_phase > end_phase)
+            std::swap(start_phase, end_phase);
+
+        clip_cache_[getClipIndex()].trim(start_phase, end_phase);
+    }
+
+    /* Folder loading */
+
+    static const int MAX_FILES = 256;
+
+    std::vector<std::string> clip_names_;
+    std::vector<std::string> clip_long_names_;
+    std::vector<AudioClip> clip_cache_;
+    std::string directory_ = "";
+    int clip_count_ = 0;
+
+    void initializeClipCache() {
+        for (size_t i = 0; i < MAX_FILES; i++) {
+            clip_cache_.push_back(AudioClip());
+            clip_names_.push_back("Load folder");
+        }
+    }
+
+    void setPath(std::string path, bool force_reload) {
+        const std::string directory = string::directory(path);
+        setDirectory(directory, force_reload);
+    }
+
+    void setDirectory(std::string directory, bool force_reload) {
+        playing_ = false;
+        loadDirectory(directory, force_reload);
+    }
+
+    void loadDirectory(std::string directory, bool force_reload) {
+        if (directory_ == directory && !force_reload)
+            return;
+
         // First two entries are:
         // .
         // ..
@@ -367,72 +395,39 @@ struct AdvancedSampler : Module
         if ((dir = opendir(directory.c_str())) == NULL)
             return;
 
+        directory_ = directory;
+
         struct dirent *ent;
 
-        baseNames_.clear();
-        displayNames_.clear();
-        clip_cache_.clear();
+        clip_names_.clear();
+        clip_long_names_.clear();
+        clip_count_ = 0;
 
-        while ((ent = readdir(dir)) != NULL)
-        {
+        while ((ent = readdir(dir)) != NULL) {
             std::string fileName = ent->d_name;
-            if (fileName != ".." && fileName != ".") // Dont add invalid entries.
-            {
+            if (fileName != ".." && fileName != ".") { // Dont add invalid entries.
                 // Only add .wav files
                 std::size_t found = fileName.find(".wav", fileName.length() - 5);
                 // and .WAV files
-                if (found == std::string::npos)
+                if (found == std::string::npos) {
                     found = fileName.find(".WAV", fileName.length() - 5);
-
-                if (found != std::string::npos)
-                {
-                    std::string basename = string::filenameBase(fileName);
-                    std::string displayname = shorten_string(basename);
-                    baseNames_.push_back(basename);
-                    displayNames_.push_back(displayname);
-                    AudioClip new_clip;
-                    clip_cache_.push_back(new_clip);
+                }
+                if (found != std::string::npos) {
+                    if (clip_count_ < MAX_FILES) {
+                        std::string clip_long_name = string::filenameBase(fileName);
+                        std::string clip_short_name = shorten_string(clip_long_name);
+                        std::string clip_path = directory + "/" + clip_long_name + ".wav";
+                        clip_cache_[clip_count_].load(clip_path);
+                        clip_names_.push_back(clip_short_name);
+                        clip_long_names_.push_back(clip_long_name);
+                        clip_count_++;
+                    }
                 }
             }
         }
     }
 
-    inline void loadClipFromCvKnob()
-    {
-        if (directory_ == "")
-            return;
-            
-        float sample_value = clamp((inputs[SAMPLE_INPUT].getVoltage() / 10) + params[SAMPLE_PARAM].getValue(), 0.f, 1.f);
-        int new_file_index = (int)(sample_value * (baseNames_.size() - 1));
-        
-        if (fileIndex_ == new_file_index)
-            return;
-        
-        fileIndex_ = new_file_index;
-
-        if (!clip_cache_[fileIndex_].isLoaded())
-            clip_cache_[fileIndex_].load(getClipPath(fileIndex_));
-    }
-
-    inline std::string getClipPath(int index)
-    {
-        if (directory_ == "")
-            return "";
-
-        return directory_ + "/" + baseNames_[fileIndex_] + ".wav";
-    }
-
-    unsigned int findTextOnBaseNames(std::string text)
-    {
-        for (unsigned int i = 0; i < baseNames_.size(); i++)
-            if (text == baseNames_[i])
-                return i;
-
-        return 0;
-    }
-
-    static std::string shorten_string(const std::string &text, int maxCharacters = 13)
-    {
+    static std::string shorten_string(const std::string &text, int maxCharacters = 16) {
         const int characterCount = text.size();
 
         if (characterCount <= maxCharacters)
@@ -441,72 +436,24 @@ struct AdvancedSampler : Module
         const int overSize = characterCount - maxCharacters;
         return text.substr(0, characterCount - overSize);
     }
-
-    // LCD
-
-    std::string getClipName()
-    {
-        if (recording_)
-            return "RECORDING";
-
-        if (displayNames_.size() == 0)
-            return "LOAD SAMPLE";
-
-        return displayNames_[fileIndex_];
-    }
-
-    inline float *getClipWaveform()
-    {
-        return clip_cache_[fileIndex_].waveform_;
-    }
-
-    LutEnvelope env_;
-    dsp::PulseGenerator eoc_pulse_;
-    dsp::SchmittTrigger input_trigger_, rec_input_trigger_;
-
-    // Sample rate conversion
-    dsp::SampleRateConverter<1> src_;
-    dsp::DoubleRingBuffer<dsp::Frame<1>, 256> outputBuffer_;
-
-    int interpolation_mode_index_ = 3;
-    bool save_recordings_ = true;
-    bool hold_ = false;
-    bool looping_ = false;
-    bool recording_ = false;
-    bool playing_ = false;
-
-    float phase_start_ = 0;
-    float phase_end_ = 0;
-    float audio_index_ = 0;
-    float phase_ = 0;
-
-    int fileIndex_ = 0;
-    std::string directory_ = "";
-    std::vector<std::string> baseNames_;
-    std::vector<std::string> displayNames_;
-    std::vector<AudioClip> clip_cache_;
-
-    // UI
-    dsp::Timer ui_timer_;
-    dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
 };
 
-static void selectPath(AdvancedSampler *module)
-{
+static void selectPath(AdvancedSampler *module) {
     std::string dir;
     std::string filename;
-    if (module->directory_ != "") {
-        dir = module->directory_;
-        filename = string::filename("Untitled");
-    }
-    else {
+
+    if (module->directory_ == "") {
         dir = asset::user("");
         filename = "Untitled";
+    }
+    else {
+        dir = module->directory_;
+        filename = string::filename("Untitled");
     }
 
     char *path = osdialog_file(OSDIALOG_OPEN, dir.c_str(), filename.c_str(), NULL);
     if (path) {
-        module->setPath(path);
+        module->setPath(path, true);
         free(path);
     }
 }
@@ -527,111 +474,115 @@ struct LoadButton : RubberSmallButton
     }
 };
 
-struct LoadKnob : RoundGrayKnob
-{
-    LoadKnob() {}
-
-    void onChange(const event::Change &e) override {
-        AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
-
-        if (module)
-            module->loadClipFromCvKnob();
-
-        RoundGrayKnob::onChange(e);
-    }
-};
-
-struct DebugDisplay : TransparentWidget
+struct SamplerDisplay : TransparentWidget
 {
     AdvancedSampler *module;
     std::shared_ptr<Font> font;
 
-    DebugDisplay() {
+    SamplerDisplay() {
         font = APP->window->loadFont(asset::plugin(pluginInstance, "res/Fonts/FiraMono-Bold.ttf"));
     }
 
     void draw(const DrawArgs &args) override {
-
         // Background
         NVGcolor backgroundColor = nvgRGB(0x18, 0x18, 0x18);
         NVGcolor borderColor = nvgRGB(0x08, 0x08, 0x08);
         nvgBeginPath(args.vg);
-        nvgRoundedRect(args.vg, 0.0, 0.0, box.size.x, box.size.y, 5.0);
+        nvgRoundedRect(args.vg, 0.0, 0.0, box.size.x, box.size.y, 3.0);
         nvgFillColor(args.vg, backgroundColor);
         nvgFill(args.vg);
-
         nvgStrokeWidth(args.vg, 1.0);
         nvgStrokeColor(args.vg, borderColor);
         nvgStroke(args.vg);
 
         if (!module)
             return;
+        
+        float font_heigth = 6;
+        float waveform_text_margin = 4;
+        Vec screen_margin = Vec(4, 4);
 
-        const NVGcolor textColor = nvgRGB(0xaf, 0xd2, 0x2c);
-        const NVGcolor midColor = nvgTransRGBA(textColor, 32);
-        const NVGcolor loop_color = module->looping_ ? textColor : midColor;
-        const NVGcolor redColor = nvgRGB(0xaf, 0x08, 0x08);
-        const NVGcolor recordColor = module->recording_ ? redColor : nvgTransRGBA(redColor, 16);
-        const Vec waveform_origin = Vec(2.5f, 22.5f);
-        const Vec textPos = Vec(4, 9);
-        const float waveform_width = 100; //105; // box.size.x
-        const float waveform_height = 20; // 35.5 // box size.y
-        const std::string sampleText = module ? module->getClipName() : "";
-        const std::string loop_text_ = "ON";
-
-        // Draw sample name
-        nvgFontSize(args.vg, 12);
-        nvgFillColor(args.vg, textColor);
+        const NVGcolor text_color = nvgRGB(44, 175, 210);
+        nvgFillColor(args.vg, text_color);
+        nvgFontSize(args.vg, 10);
         nvgFontFaceId(args.vg, font->handle);
         nvgTextLetterSpacing(args.vg, 1);
-        nvgText(args.vg, textPos.x, textPos.y, sampleText.c_str(), NULL);
+        
+        // Clip name
+        nvgTextAlign(args.vg, NVG_ALIGN_LEFT);
+        const std::string clip_name = module->getClipName();
+        nvgText(args.vg, screen_margin.x, screen_margin.y + font_heigth, clip_name.c_str(), NULL);
 
-        // Draw loop text
-        nvgFillColor(args.vg, loop_color);
-        nvgFontSize(args.vg, 8);
-        nvgText(args.vg, 63, 39, loop_text_.c_str(), NULL);
+        // Clip number
+        nvgFontSize(args.vg, 10);
+        nvgTextAlign(args.vg, NVG_ALIGN_RIGHT);
+        const std::string clip_number = std::to_string(module->getClipIndex()) + "/" + std::to_string(module->clip_count_);
+        nvgText(args.vg, box.size.x - screen_margin.x, screen_margin.y + font_heigth, clip_number.c_str(), NULL);
 
-        // Draw recording dot
-        nvgBeginPath(args.vg);
-        nvgFillColor(args.vg, recordColor);
-        nvgCircle(args.vg, 99, 5, 3);
-        nvgFill(args.vg);
-
-        // Draw waveform
-        nvgBeginPath(args.vg);
-        nvgStrokeColor(args.vg, textColor);
+        // Waveform 
+        const Vec waveform_size = Vec(box.size.x - screen_margin.x * 2, box.size.y - screen_margin.y * 2 - font_heigth - waveform_text_margin);
+        const Vec half_waveform_size = waveform_size.div(2);
+        const Vec waveform_origin = Vec(screen_margin.x, box.size.y / 2 + font_heigth / 2 + waveform_text_margin / 2);
+        const NVGcolor waveform_fill_color = nvgRGB(11, 44, 52);
+        const NVGcolor waveform_stroke_color = nvgRGB(44, 175, 210);
         float *points = module->getClipWaveform();
-
+        nvgBeginPath(args.vg);
         nvgMoveTo(args.vg, waveform_origin.x, waveform_origin.y);
         for (size_t i = 0; i < WAVEFORM_RESOLUTION; i++)
-            nvgLineTo(args.vg, waveform_origin.x + i * (waveform_width / WAVEFORM_RESOLUTION), waveform_origin.y + points[i] * waveform_height);
-        nvgLineTo(args.vg, waveform_origin.x + waveform_width, waveform_origin.y);
+            nvgLineTo(args.vg, waveform_origin.x + i * (waveform_size.x / WAVEFORM_RESOLUTION), waveform_origin.y - points[i] * half_waveform_size.y);
+        nvgLineTo(args.vg, waveform_origin.x + waveform_size.x, waveform_origin.y);
+        for (size_t i = WAVEFORM_RESOLUTION; i > 0; i--)
+            nvgLineTo(args.vg, waveform_origin.x + (i-1) * (waveform_size.x / WAVEFORM_RESOLUTION), waveform_origin.y + points[i-1] * half_waveform_size.y);
+        nvgLineTo(args.vg, waveform_origin.x, waveform_origin.y);
+        nvgFillColor(args.vg, waveform_fill_color);
+        nvgFill(args.vg);
+        nvgStrokeColor(args.vg, waveform_stroke_color);
+        nvgStroke(args.vg);
 
-        nvgMoveTo(args.vg, waveform_origin.x, waveform_origin.y);
-        for (size_t i = 0; i < WAVEFORM_RESOLUTION; i++)
-            nvgLineTo(args.vg, waveform_origin.x + i * (waveform_width / WAVEFORM_RESOLUTION), waveform_origin.y - points[i] * waveform_height);
-        nvgLineTo(args.vg, waveform_origin.x + waveform_width, waveform_origin.y);
-
-        nvgFillColor(args.vg, midColor);
+        // Loop shadow
+        float min = std::min(module->getPhaseStart(), module->getPhaseEnd());
+        float max = std::max(module->getPhaseStart(), module->getPhaseEnd());
+        const NVGcolor shadow_color = nvgTransRGBA(backgroundColor, 128);
+        nvgBeginPath(args.vg);
+        nvgRect(args.vg, waveform_origin.x, waveform_origin.y - half_waveform_size.y, waveform_size.x * min, waveform_size.y);
+        nvgRect(args.vg, waveform_origin.x + waveform_size.x * max, waveform_origin.y - half_waveform_size.y, waveform_size.x * (1 - max), waveform_size.y);
+        nvgFillColor(args.vg, shadow_color);
         nvgFill(args.vg);
 
-        nvgStroke(args.vg);
-
-        // Draw start/end/play_position lines of waveform
-        nvgBeginPath(args.vg);
-        nvgMoveTo(args.vg, waveform_origin.x + module->phase_start_ * waveform_width, waveform_origin.y - 10);
-        nvgLineTo(args.vg, waveform_origin.x + module->phase_start_ * waveform_width, waveform_origin.y + 10);
-        nvgMoveTo(args.vg, waveform_origin.x + module->phase_end_ * waveform_width, waveform_origin.y - 10);
-        nvgLineTo(args.vg, waveform_origin.x + module->phase_end_ * waveform_width, waveform_origin.y + 10);
-        if (module->playing_)
-        {
-            nvgMoveTo(args.vg, waveform_origin.x + module->phase_ * waveform_width, waveform_origin.y - 10);
-            nvgLineTo(args.vg, waveform_origin.x + module->phase_ * waveform_width, waveform_origin.y + 10);
+        // Draw slices
+        if (module->slice_) {
+            nvgBeginPath(args.vg);
+            int slices = module->slice_division_;
+            float slice_size = waveform_size.x / slices;
+            for (int i = 0; i < slices + 1; i++) {
+                nvgMoveTo(args.vg, waveform_origin.x + slice_size * i, waveform_origin.y - half_waveform_size.y);
+                nvgLineTo(args.vg, waveform_origin.x + slice_size * i, waveform_origin.y - waveform_size.y * .33f);
+                
+                nvgMoveTo(args.vg, waveform_origin.x + slice_size * i, waveform_origin.y + half_waveform_size.y);
+                nvgLineTo(args.vg, waveform_origin.x + slice_size * i, waveform_origin.y + waveform_size.y * .33f);
+            }           
+            const NVGcolor slice_color = nvgRGB(22, 75, 105);
+            nvgStrokeColor(args.vg, slice_color);
+            nvgStroke(args.vg);
         }
-        nvgStrokeColor(args.vg, textColor);
-        nvgStroke(args.vg);
-        nvgClosePath(args.vg);
+        
+        // Draw start end positions.
+        nvgBeginPath(args.vg);
+        nvgMoveTo(args.vg, waveform_origin.x + module->getPhaseStart() * waveform_size.x, waveform_origin.y - half_waveform_size.y);
+        nvgLineTo(args.vg, waveform_origin.x + module->getPhaseStart() * waveform_size.x, waveform_origin.y + half_waveform_size.y);
+        nvgMoveTo(args.vg, waveform_origin.x + module->getPhaseEnd()   * waveform_size.x, waveform_origin.y - half_waveform_size.y);
+        nvgLineTo(args.vg, waveform_origin.x + module->getPhaseEnd()   * waveform_size.x, waveform_origin.y + half_waveform_size.y);
+        
+        // Draw play position.
+        if (module->playing_) {
+            nvgMoveTo(args.vg, waveform_origin.x + module->getPhase()  * waveform_size.x, waveform_origin.y - half_waveform_size.y);
+            nvgLineTo(args.vg, waveform_origin.x + module->getPhase()  * waveform_size.x, waveform_origin.y + half_waveform_size.y);
+        }
 
+        nvgStrokeColor(args.vg, waveform_stroke_color);
+        nvgStroke(args.vg);
+
+        return;  
     }
 };
 
@@ -642,41 +593,47 @@ struct AdvancedSamplerWidget : ModuleWidget
         setModule(module);
         setPanel(APP->window->loadSvg(asset::plugin(pluginInstance, "res/AdvancedSampler.svg")));
 
-        addChild(createWidget<ScrewBlack>(Vec(0, 0)));
-        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 1 * RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, 0)));
+        addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
         addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addParam(createParamCentered<LoadButton>(mm2px(Vec(5.08, 34.383)), module, AdvancedSampler::LOAD_PARAM));
-        addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(15.24, 34.383)), module, AdvancedSampler::PLAY_PARAM));
-        addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(25.4, 34.383)), module, AdvancedSampler::LOOP_PARAM));
-        addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(35.56, 34.383)), module, AdvancedSampler::REC_PARAM));
+        addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(19.304, 35.271)), module, AdvancedSampler::PLAY_PARAM));
+        addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(31.496, 35.316)), module, AdvancedSampler::LOOP_PARAM));
+        addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(43.688, 35.326)), module, AdvancedSampler::REC_PARAM));
+        addParam(createParamCentered<LoadButton>(mm2px(Vec(7.112, 35.331)), module, AdvancedSampler::LOAD_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(9.144, 50.603)), module, AdvancedSampler::SAMPLE_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(25.4, 50.603)), module, AdvancedSampler::START_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(41.656, 50.603)), module, AdvancedSampler::END_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(9.144, 69.142)), module, AdvancedSampler::TUNE_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(25.4, 69.142)), module, AdvancedSampler::ATTACK_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(41.656, 69.142)), module, AdvancedSampler::DECAY_PARAM));
 
-        addParam(createParamCentered<LoadKnob>(mm2px(Vec(7.62, 48.187)), module, AdvancedSampler::SAMPLE_PARAM));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.688, 85.611)), module, AdvancedSampler::END_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.304, 85.659)), module, AdvancedSampler::SAMPLE_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.496, 85.659)), module, AdvancedSampler::START_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.112, 85.661)), module, AdvancedSampler::PLAY_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.688, 100.163)), module, AdvancedSampler::DECAY_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.304, 100.174)), module, AdvancedSampler::TUNE_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.496, 100.189)), module, AdvancedSampler::ATTACK_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.112, 100.217)), module, AdvancedSampler::REC_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 114.713)), module, AdvancedSampler::AUDIO_INPUT));
 
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(20.32, 48.187)), module, AdvancedSampler::TUNE_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(33.02, 48.187)), module, AdvancedSampler::ATTACK_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(7.62, 63.246)), module, AdvancedSampler::START_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(20.32, 63.246)), module, AdvancedSampler::END_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(33.02, 63.246)), module, AdvancedSampler::DECAY_PARAM));
+        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(37.592, 114.715)), module, AdvancedSampler::EOC_OUTPUT));
+        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(25.4, 114.72)), module, AdvancedSampler::AUDIO_OUTPUT));
 
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.08, 83.324)), module, AdvancedSampler::SAMPLE_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15.24, 83.324)), module, AdvancedSampler::TUNE_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(25.4, 83.324)), module, AdvancedSampler::ATTACK_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(35.56, 83.324)), module, AdvancedSampler::DECAY_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(5.08, 98.383)), module, AdvancedSampler::START_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(15.24, 98.383)), module, AdvancedSampler::END_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(25.4, 98.383)), module, AdvancedSampler::AUDIO_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(35.56, 98.383)), module, AdvancedSampler::REC_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.16, 113.441)), module, AdvancedSampler::PLAY_INPUT));
+        // Leds
+        if (module) {
+            addChild(createLightCentered<RubberSmallButtonLed<BlueLight>>(mm2px( Vec(19.304, 35.271)), module, AdvancedSampler::PLAY_LIGHT));
+            addChild(createLightCentered<RubberSmallButtonLed<BlueLight>>(mm2px( Vec(43.688, 35.326)), module, AdvancedSampler::REC_LIGHT_RED));
+            addChild(createLightCentered<RubberSmallButtonLed<BlueLight>> (mm2px(Vec(31.496, 35.316)), module, AdvancedSampler::LOOP_LIGHT));
+        }
 
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(20.32, 113.441)), module, AdvancedSampler::EOC_OUTPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(30.48, 113.441)), module, AdvancedSampler::AUDIO_OUTPUT));
-
+        // Display
         {
-            DebugDisplay *display = new DebugDisplay();
-            display->box.pos = mm2px(Vec(2.540f, 128.5 - 101.646 - 13.803));
-            display->box.size = mm2px(Vec(35.560, 13.803));
+            SamplerDisplay *display = new SamplerDisplay();
+            display->box.size = mm2px(Vec(44.704, 15.24));
+            display->box.pos = mm2px(Vec(3.048, 10.635));
             display->module = module;
             addChild(display);
         }
@@ -686,30 +643,20 @@ struct AdvancedSamplerWidget : ModuleWidget
     {
         AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(this->module);
 
-        struct InterpolationIndexItem : MenuItem
-        {
+        struct InterpolationIndexItem : MenuItem {
             AdvancedSampler *module;
             int index;
-            void onAction(const event::Action &e) override
-            {
+            void onAction(const event::Action &e) override {
                 module->interpolation_mode_index_ = index;
             }
         };
 
-        struct InterpolationItem : MenuItem
-        {
+        struct InterpolationItem : MenuItem {
             AdvancedSampler *module;
-            Menu *createChildMenu() override
-            {
+            Menu *createChildMenu() override {
                 Menu *menu = new Menu();
-                const std::string interpolationLabels[] = {
-                    "None",
-                    "Linear",
-                    "Hermite",
-                    "BSPLine"
-                };
-                for (int i = 0; i < (int)LENGTHOF(interpolationLabels); i++)
-                {
+                const std::string interpolationLabels[] = { "None", "Linear", "Hermite", "BSPLine" };
+                for (int i = 0; i < (int)LENGTHOF(interpolationLabels); i++) {
                     InterpolationIndexItem *item = createMenuItem<InterpolationIndexItem>(interpolationLabels[i], CHECKMARK(module->interpolation_mode_index_ == i));
                     item->module = module;
                     item->index = i;
@@ -719,28 +666,21 @@ struct AdvancedSamplerWidget : ModuleWidget
             }
         };
 
-        struct EnvelopeIndexItem : MenuItem
-        {
+        struct EnvelopeIndexItem : MenuItem {
             AdvancedSampler *module;
             bool hold;
-            void onAction(const event::Action &e) override
-            {
-                module->hold_ = hold;
+            void onAction(const event::Action &e) override {
+                module->hold_envelope_ = hold;
             }
         };
 
-        struct HoldItem : MenuItem {
+        struct EnvelopeItem : MenuItem {
             AdvancedSampler *module;
-            Menu *createChildMenu() override
-            {
+            Menu *createChildMenu() override {
                 Menu *menu = new Menu();
-                const std::string envelopeLabels[] = {
-                    "Attack / Decay",
-                    "Hold / Decay"
-                };
-                for (int i = 0; i < (int)LENGTHOF(envelopeLabels); i++)
-                {
-                    EnvelopeIndexItem *item = createMenuItem<EnvelopeIndexItem>(envelopeLabels[i], CHECKMARK(module->hold_ == i));
+                const std::string envelopeLabels[] = { "Attack / Decay", "Hold / Decay" };
+                for (int i = 0; i < (int)LENGTHOF(envelopeLabels); i++) {
+                    EnvelopeIndexItem *item = createMenuItem<EnvelopeIndexItem>(envelopeLabels[i], CHECKMARK(module->hold_envelope_ == i));
                     item->module = module;
                     item->hold = i;
                     menu->addChild(item);
@@ -749,29 +689,56 @@ struct AdvancedSamplerWidget : ModuleWidget
             }
         };
 
-        struct SaveItem : MenuItem {
+        struct SliceItem : MenuItem {
             AdvancedSampler *module;
             void onAction(const event::Action &e) override {
-                module->save_recordings_ ^= true;
+                module->slice_ ^= true;
             }
             void step() override {
-                rightText = CHECKMARK(module->save_recordings_);
+                rightText = module->slice_ ? "On" : "Off";
             }
         };
 
-        menu->addChild(new MenuEntry);
+        struct TrimItem : MenuItem {
+            AdvancedSampler *module;
+            void onAction(const event::Action &e) override {
+                module->trimSample();
+            }
+        };
 
-        HoldItem *holdItem = createMenuItem<HoldItem>("Envelope", ">");
+        struct SaveItem : MenuItem {
+            AdvancedSampler *module;
+            void onAction(const event::Action &e) override {
+                module->saveClip();
+            }
+        };
+
+        menu->addChild(new MenuSeparator);
+
+        EnvelopeItem *holdItem = createMenuItem<EnvelopeItem>("Envelope", RIGHT_ARROW);
         holdItem->module = module;
         menu->addChild(holdItem);
 
-        InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation", ">");
+        InterpolationItem *interpolationItem = createMenuItem<InterpolationItem>("Interpolation", RIGHT_ARROW);
         interpolationItem->module = module;
         menu->addChild(interpolationItem);
 
-        SaveItem *saveItem = createMenuItem<SaveItem>("Save recordings");
+        menu->addChild(new MenuSeparator);
+
+        SliceItem *sliceItem = createMenuItem<SliceItem>("Slice mode");
+        sliceItem->module = module;
+        menu->addChild(sliceItem);
+
+        menu->addChild(new MenuSeparator);
+
+        TrimItem *trimItem = createMenuItem<TrimItem>("Trim sample");
+        trimItem->module = module;
+        menu->addChild(trimItem);
+
+        SaveItem *saveItem = createMenuItem<SaveItem>("Save sample");
         saveItem->module = module;
         menu->addChild(saveItem);
+
     }
 };
 
