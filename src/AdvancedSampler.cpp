@@ -59,7 +59,7 @@ struct AdvancedSampler : Module {
     bool exponential_start_end_ = false;
     bool slice_ = false;
     int slice_division_ = 16;
-    int interpolation_mode_index_ = 2;
+    Interpolations interpolation_mode_ = HERMITE;
 
     LutEnvelope env_;
     dsp::PulseGenerator eoc_pulse_;
@@ -93,7 +93,7 @@ struct AdvancedSampler : Module {
         json_object_set_new(rootJ, "hold_envelope", json_boolean(hold_envelope_));
         json_object_set_new(rootJ, "playing", json_boolean(playing_));
         json_object_set_new(rootJ, "read_position", json_real(read_position_));
-        json_object_set_new(rootJ, "interpolation_mode", json_integer(interpolation_mode_index_));
+        json_object_set_new(rootJ, "interpolation_mode", json_integer(interpolation_mode_));
         json_object_set_new(rootJ, "slice", json_boolean(slice_));
         return rootJ;
     }
@@ -119,7 +119,7 @@ struct AdvancedSampler : Module {
 
         json_t *interpolationJ = json_object_get(rootJ, "interpolation_mode");
         if (interpolationJ)
-            interpolation_mode_index_ = json_integer_value(interpolationJ);
+            interpolation_mode_ = (Interpolations)json_integer_value(interpolationJ);
 
         json_t *playJ = json_object_get(rootJ, "playing");
         if (playJ && directory_ != "")
@@ -205,8 +205,6 @@ struct AdvancedSampler : Module {
             
             float freq = dsp::approxExp2_taylor5((tune) + 20) / 1048576 * clip_cache_[clip_index].getDt();
             
-            
-            
             unsigned int sample_count = clip_cache_[clip_index].getSampleCount();
 
             // Before EOC pulse was procesed inside the output buffer like the envelope. Was not in sync because of the samplerate changes.
@@ -226,7 +224,7 @@ struct AdvancedSampler : Module {
                 }
                 // Fill audio & eoc buffers.
                 input_buffer[i].samples[0] = playing_
-                                             ? clip_cache_[getClipIndex()].getSample(read_position_ * sample_count, (Interpolations)interpolation_mode_index_, !forward)
+                                             ? clip_cache_[getClipIndex()].getSample(read_position_ * sample_count, interpolation_mode_, !forward)
                                              : 0; // Initialize
 
                 input_buffer[i].samples[1] = eoc_pulse_.process(1.0f) ? 10.0f : 0.0f;
@@ -648,9 +646,9 @@ struct AdvancedSamplerWidget : ModuleWidget
 
         struct InterpolationIndexItem : MenuItem {
             AdvancedSampler *module;
-            int index;
+            Interpolations mode;
             void onAction(const event::Action &e) override {
-                module->interpolation_mode_index_ = index;
+                module->interpolation_mode_ = mode;
             }
         };
 
@@ -660,9 +658,9 @@ struct AdvancedSamplerWidget : ModuleWidget
                 Menu *menu = new Menu();
                 const std::string interpolationLabels[] = { "None", "Linear", "Hermite", "BSPLine" };
                 for (int i = 0; i < (int)LENGTHOF(interpolationLabels); i++) {
-                    InterpolationIndexItem *item = createMenuItem<InterpolationIndexItem>(interpolationLabels[i], CHECKMARK(module->interpolation_mode_index_ == i));
+                    InterpolationIndexItem *item = createMenuItem<InterpolationIndexItem>(interpolationLabels[i], CHECKMARK(module->interpolation_mode_ == (Interpolations)i));
                     item->module = module;
-                    item->index = i;
+                    item->mode = (Interpolations)i;
                     menu->addChild(item);
                 }
                 return menu;
