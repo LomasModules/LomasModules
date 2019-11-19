@@ -78,7 +78,7 @@ struct AdvancedSampler : Module {
         configParam(ATTACK_PARAM, 0.f, 1.f, 0.f, "Attack");
         configParam(DECAY_PARAM,  0.f, 1.f, 1.f, "Decay");
         configParam(START_PARAM,  0.f, 1.f, 0.f, "Start point", " %", 0.0f, 100);
-        configParam(END_PARAM,  0.f, 1.f, 1.f, "End poin", " %", 0.0f, 100);
+        configParam(END_PARAM,  0.f, 1.f, 1.f, "End point", " %", 0.0f, 100);
         configParam(LOAD_PARAM, 0.f, 1.f, 0.f, "Open folder");
         configParam(PLAY_PARAM, 0.f, 1.f, 0.f, "Play");
         configParam(LOOP_PARAM, 0.f, 1.f, 0.f, "Loop");
