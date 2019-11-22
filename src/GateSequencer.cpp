@@ -53,7 +53,7 @@ struct GateSequencer : Module
 	int next_pattern_index_ = 0;
 
 	int global_quatization_ = 16;
-	int reset_mode_index_ = 0;
+	int reset_mode_index_ = 1;
 	bool reset_next_step_ = false;
 	
 	// UI
@@ -375,23 +375,27 @@ struct GateSequencer : Module
 		// gates.
 		json_t *gatesJ = json_array();
 		for (int i = 0; i < MAX_PATTERN_LEN * PATTERNS; i++)
-		{
 			json_array_insert_new(gatesJ, i, json_integer((int)gates[i]));
-		}
+
 		json_object_set_new(rootJ, "gates", gatesJ);
 
 		json_t *patternLenJ = json_array();
 		for (int i = 0; i < PATTERNS; i++)
-		{
 			json_array_insert_new(patternLenJ, i, json_integer((int)pattern_len_[i]));
-		}
+
 		json_object_set_new(rootJ, "len", patternLenJ);
+
+		json_object_set_new(rootJ, "reset_mode", json_integer(reset_mode_index_));
 
 		return rootJ;
 	}
 
 	void dataFromJson(json_t *rootJ) override
 	{
+		json_t *reset_modeJ = json_object_get(rootJ, "reset_mode");
+        if (reset_modeJ)
+            reset_mode_index_ = json_integer_value(reset_modeJ);
+
 		// pattern index
 		json_t *patternJ = json_object_get(rootJ, "patternIndex");
 		if (patternJ)
