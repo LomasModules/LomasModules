@@ -1,6 +1,6 @@
 #include "plugin.hpp"
 #include "components.hpp"
-#include "LutEnvelope.hpp"
+#include "dsp/LutEnvelope.hpp"
 #include "osdialog.h"
 #include "dirent.h"
 #include "samplerate.h"
@@ -63,7 +63,7 @@ struct AdvancedSampler : Module {
 
     LutEnvelope env_;
     dsp::PulseGenerator eoc_pulse_;
-    dsp::SchmittTrigger input_trigger_, rec_input_trigger_;
+    dsp::SchmittTrigger play_trigger, rec_trigger_;
     dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
     dsp::Timer light_timer_;
     
@@ -155,7 +155,7 @@ struct AdvancedSampler : Module {
 
         // Rec input trigger.
         if (inputs[AUDIO_INPUT].isConnected())
-            if (rec_input_trigger_.process(inputs[REC_INPUT].getVoltage()))
+            if (rec_trigger_.process(inputs[REC_INPUT].getVoltage()))
                 switchRec(args.sampleRate);
 
         // Recording process.
@@ -176,7 +176,7 @@ struct AdvancedSampler : Module {
             trigger();
 
         if (inputs[PLAY_INPUT].isConnected())
-            if (input_trigger_.process(inputs[PLAY_INPUT].getVoltage()))
+            if (play_trigger.process(inputs[PLAY_INPUT].getVoltage()))
                 trigger();
 
         // Loop button & cv.
@@ -267,7 +267,7 @@ struct AdvancedSampler : Module {
 
     inline void trigger() {
         playing_ = true;
-        env_.tigger(true);
+        env_.tigger(false);
         read_position_ = getPhaseStart();
     }
 
@@ -755,9 +755,6 @@ struct AdvancedSamplerWidget : ModuleWidget
         SaveClipItem *saveItem = createMenuItem<SaveClipItem>("Save sample");
         saveItem->module = module;
         menu->addChild(saveItem);
-
-        
-
     }
 };
 

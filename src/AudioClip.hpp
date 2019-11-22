@@ -1,5 +1,5 @@
 #include "dep/dr_wav/dr_wav.h"
-#include "Interpolation.hpp"
+#include "dsp/Interpolation.hpp"
 #define WAVEFORM_RESOLUTION 64
 
 struct AudioClip
