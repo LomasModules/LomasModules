@@ -59,6 +59,10 @@ struct AudioClip
         float t = index - x1;
         return BSpline(left_channel_[x0], left_channel_[x1], left_channel_[x2], left_channel_[x3], t);
     }
+    inline float getSample(double phase, Interpolations interpolation_mode) {
+        double index = phase * getSampleCount();
+        return getSample(index, interpolation_mode, false);
+    }
 
     inline float getSample(double index, Interpolations interpolation_mode, bool reverse) {
         switch (interpolation_mode) {

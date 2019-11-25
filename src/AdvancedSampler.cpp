@@ -5,6 +5,7 @@
 #include "dirent.h"
 #include "samplerate.h"
 #include "AudioClip.hpp"
+#include "dsp/Antipop.hpp"
 
 struct AdvancedSampler : Module {
     enum ParamIds {
@@ -55,6 +56,7 @@ struct AdvancedSampler : Module {
     bool low_cpu_ = false;
     bool looping_ = false;
     bool recording_ = false;
+    bool reset_envelope_ = false;
     bool hold_envelope_ = false;
     bool exponential_start_end_ = false;
     bool slice_ = false;
@@ -66,10 +68,12 @@ struct AdvancedSampler : Module {
     dsp::SchmittTrigger play_trigger, rec_trigger_;
     dsp::BooleanTrigger play_button_trigger_, rec_button_trigger_, loop_button_trigger_;
     dsp::Timer light_timer_;
-    
+
     // Sample rate conversion
     dsp::SampleRateConverter<2> src_vcv_;
     dsp::DoubleRingBuffer<dsp::Frame<2>, 256> output_buffer_;
+
+    Antipop antipop_;
 
     AdvancedSampler() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -135,7 +139,7 @@ struct AdvancedSampler : Module {
     }
 
     void process(const ProcessArgs &args) override {
-        
+
         if (!clip_cache_[getClipIndex()].isLoaded())
             return;
 
@@ -188,48 +192,60 @@ struct AdvancedSampler : Module {
             outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.0f : 0.0f);
         }
 
-        // Audio processing.
+        SinglePass(args);
+
+        return;
+    }
+
+    void BufferedPass(const ProcessArgs &args) {
         const int buffer_size = 16;
         if (output_buffer_.empty()) {
-            // Prepare some variables
-            int clip_index = getClipIndex();
             float start_phase = getPhaseStart();
             float end_phase = getPhaseEnd();
+            bool forward = end_phase >= start_phase;
             float min_phase = std::min(start_phase, end_phase);
             float max_phase = std::max(start_phase, end_phase);
-            bool forward = end_phase >= start_phase;
-            float tune = getParamModulated(TUNE_PARAM, 1.0f, -4.0f, 4.0f);
-            
-            if (low_cpu_)
-				tune += log2f(clip_cache_[clip_index].getSampleRate() * args.sampleTime);
-            
-            float freq = dsp::approxExp2_taylor5((tune) + 20) / 1048576 * clip_cache_[clip_index].getDt();
-            
-            unsigned int sample_count = clip_cache_[clip_index].getSampleCount();
+            int clip_index = getClipIndex();
 
-            // Before EOC pulse was procesed inside the output buffer like the envelope. Was not in sync because of the samplerate changes.
-            // Buffer to render the audio clip & EOC pulse. 0 is audio channel 1 is eoc pulse.
+            float tune = getParamModulated(TUNE_PARAM, 1.0f, -4.0f, 4.0f);
+            if (args.sampleRate != clip_cache_[clip_index].getSampleRate())
+                tune += log2f(clip_cache_[clip_index].getSampleRate() * args.sampleTime);
+            float freq = dsp::approxExp2_taylor5((tune) + 20) / 1048576 * clip_cache_[clip_index].getDt();
+
             dsp::Frame<2> input_buffer[buffer_size];
             for (int i = 0; i < buffer_size; i++) {
-                if (playing_) {
-                    // Advance read position.
-                    read_position_ += forward ? freq : -freq;
-                    // Warp or stop.
-                    bool last_sample = (forward && read_position_ >= max_phase) || (!forward && read_position_ < min_phase);
-                    if (last_sample && playing_) {
-                        playing_ = looping_;
-                        read_position_ = getPhaseStart();
-                        eoc_pulse_.trigger(clip_cache_[getClipIndex()].getSampleRate() / 1000.0f);
-                    }
+                // Advance read position.
+                read_position_ += forward ? freq : -freq;
+
+                // Warp & stop.
+                bool last_sample = (forward && read_position_ >= max_phase) || (!forward && read_position_ < min_phase);
+                if (last_sample && playing_) {
+                    playing_ = looping_;
+                    read_position_ = getPhaseStart();
+                    eoc_pulse_.trigger(clip_cache_[clip_index].getSampleRate() / 1000.0f);
                 }
+
+
+                float clip_sample = playing_
+                                    ? clip_cache_[clip_index].getSample(read_position_, interpolation_mode_)
+                                    : 0;
+
+                // Amp envelope.
+                const float attack = getParamModulated(ATTACK_PARAM, 0.1f);
+                const float decay = getParamModulated(DECAY_PARAM, 0.1f);
+
+                if (hold_envelope_)
+                    env_.envelopeHD(attack, decay); // Hold & Decay
+                else
+                    env_.envelopeAD(attack, decay); // Attack & Decay
+
+                float audio_out = clip_sample * env_.process(args.sampleTime);
+
                 // Fill audio & eoc buffers.
-                input_buffer[i].samples[0] = playing_
-                                             ? clip_cache_[getClipIndex()].getSample(read_position_ * sample_count, interpolation_mode_, !forward)
-                                             : 0; // Initialize
-
+                input_buffer[i].samples[0] = audio_out + antipop_.process(args.sampleTime, audio_out);
                 input_buffer[i].samples[1] = eoc_pulse_.process(1.0f) ? 10.0f : 0.0f;
-            }
 
+            }
             if (low_cpu_) {
                 for (int i = 0; i < buffer_size; i++) {
                     output_buffer_.push(input_buffer[i]);
@@ -247,28 +263,74 @@ struct AdvancedSampler : Module {
 
         // Read from src buffer
         if (!output_buffer_.empty()) {
-            // Amp envelope.
-            const float attack = getParamModulated(ATTACK_PARAM, 0.1f);
-            const float decay = getParamModulated(DECAY_PARAM, 0.1f);
-
-            if (hold_envelope_)
-                env_.envelopeHD(attack, decay); // Hold & Decay
-            else
-                env_.envelopeAD(attack, decay); // Attack & Decay
-
             // Get frame from src buffer.
             dsp::Frame<2> frame = output_buffer_.shift();
 
             // Set module outputs.
-            outputs[AUDIO_OUTPUT].setVoltage(frame.samples[0] * 5 * env_.process(args.sampleTime));
+            outputs[AUDIO_OUTPUT].setVoltage(frame.samples[0] * 5);
             outputs[EOC_OUTPUT].setVoltage(frame.samples[1]);
         }
     }
 
+    void SinglePass(const ProcessArgs &args) {
+        if (!playing_)
+            return;
+  
+        int clip_index = getClipIndex();
+
+        // Calculate pitch.
+        float tune = getParamModulated(TUNE_PARAM, 1.0f, -4.0f, 4.0f);
+        
+        // Cheap SR conversion.
+        if (args.sampleRate != clip_cache_[clip_index].getSampleRate())
+            tune += log2f(clip_cache_[clip_index].getSampleRate() * args.sampleTime);
+        
+        // Calculate increment
+        float freq = dsp::approxExp2_taylor5((tune) + 20) / 1048576 * clip_cache_[clip_index].getDt();
+
+        // Move read position.
+        float start_phase = getPhaseStart();
+        float end_phase = getPhaseEnd();
+        bool forward = end_phase >= start_phase;
+        read_position_ += forward ? freq : -freq;
+
+        // Warp at start & end & stop.
+        float min_phase = std::min(start_phase, end_phase);
+        float max_phase = std::max(start_phase, end_phase);
+        bool last_sample = (forward && read_position_ >= max_phase) || (!forward && read_position_ < min_phase);
+        if (last_sample && playing_) {
+            playing_ = looping_;
+            read_position_ = getPhaseStart();
+            eoc_pulse_.trigger(clip_cache_[clip_index].getSampleRate() / 1000.0f);
+        }
+
+        // Get clip audio.
+        float clip_sample = playing_
+                            ? clip_cache_[clip_index].getSample(read_position_, interpolation_mode_)
+                            : 0;
+
+        // Update amp envelope.
+        const float attack = getParamModulated(ATTACK_PARAM, 0.1f);
+        const float decay = getParamModulated(DECAY_PARAM, 0.1f);
+
+        if (hold_envelope_)
+            env_.envelopeHD(attack, decay); // Hold & Decay
+        else
+            env_.envelopeAD(attack, decay); // Attack & Decay
+
+        float audio_out = clip_sample * env_.process(args.sampleTime);
+        float antipop = antipop_.process(args.sampleTime, audio_out);
+
+        // Set module outputs.
+        outputs[AUDIO_OUTPUT].setVoltage((audio_out + antipop) * 5);
+        outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10 : 0);
+    }
+
     inline void trigger() {
         playing_ = true;
-        env_.tigger(false);
+        env_.tigger(reset_envelope_);
         read_position_ = getPhaseStart();
+        antipop_.trigger();
     }
 
     void startRecord(int sampleRate) {
@@ -495,7 +557,7 @@ struct SamplerDisplay : TransparentWidget
 
         if (!module)
             return;
-        
+
         float font_heigth = 6;
         float waveform_text_margin = 4;
         Vec screen_margin = Vec(4, 4);
@@ -505,7 +567,7 @@ struct SamplerDisplay : TransparentWidget
         nvgFontSize(args.vg, 10);
         nvgFontFaceId(args.vg, font->handle);
         nvgTextLetterSpacing(args.vg, 1);
-        
+
         // Clip name
         nvgTextAlign(args.vg, NVG_ALIGN_LEFT);
         const std::string clip_name = module->getClipName();
@@ -517,7 +579,7 @@ struct SamplerDisplay : TransparentWidget
         const std::string clip_number = std::to_string(module->getClipIndex()) + "/" + std::to_string(module->clip_count_);
         nvgText(args.vg, box.size.x - screen_margin.x, screen_margin.y + font_heigth, clip_number.c_str(), NULL);
 
-        // Waveform 
+        // Waveform
         const Vec waveform_size = Vec(box.size.x - screen_margin.x * 2, box.size.y - screen_margin.y * 2 - font_heigth - waveform_text_margin);
         const Vec half_waveform_size = waveform_size.div(2);
         const Vec waveform_origin = Vec(screen_margin.x, box.size.y / 2 + font_heigth / 2 + waveform_text_margin / 2);
@@ -557,22 +619,22 @@ struct SamplerDisplay : TransparentWidget
             for (int i = 0; i < slices + 1; i++) {
                 nvgMoveTo(args.vg, waveform_origin.x + slice_size * i, waveform_origin.y - half_waveform_size.y);
                 nvgLineTo(args.vg, waveform_origin.x + slice_size * i, waveform_origin.y - waveform_size.y * .33f);
-                
+
                 nvgMoveTo(args.vg, waveform_origin.x + slice_size * i, waveform_origin.y + half_waveform_size.y);
                 nvgLineTo(args.vg, waveform_origin.x + slice_size * i, waveform_origin.y + waveform_size.y * .33f);
-            }           
+            }
             const NVGcolor slice_color = nvgRGB(22, 75, 105);
             nvgStrokeColor(args.vg, slice_color);
             nvgStroke(args.vg);
         }
-        
+
         // Draw start end positions.
         nvgBeginPath(args.vg);
         nvgMoveTo(args.vg, waveform_origin.x + phase_start * waveform_size.x, waveform_origin.y - half_waveform_size.y);
         nvgLineTo(args.vg, waveform_origin.x + phase_start * waveform_size.x, waveform_origin.y + half_waveform_size.y);
         nvgMoveTo(args.vg, waveform_origin.x + phase_end   * waveform_size.x, waveform_origin.y - half_waveform_size.y);
         nvgLineTo(args.vg, waveform_origin.x + phase_end   * waveform_size.x, waveform_origin.y + half_waveform_size.y);
-        
+
         // Draw play position.
         if (module->playing_) {
             float phase = module->getPhase();
@@ -583,7 +645,7 @@ struct SamplerDisplay : TransparentWidget
         nvgStrokeColor(args.vg, waveform_stroke_color);
         nvgStroke(args.vg);
 
-        return;  
+        return;
     }
 };
 
@@ -745,7 +807,7 @@ struct AdvancedSamplerWidget : ModuleWidget
         LowCpuItem *lowCpuItem = createMenuItem<LowCpuItem>("Low cpu mode");
         lowCpuItem->module = module;
         menu->addChild(lowCpuItem);
-        
+
         menu->addChild(new MenuSeparator);
 
         TrimClipItem *trimItem = createMenuItem<TrimClipItem>("Trim sample");

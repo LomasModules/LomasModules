@@ -11,7 +11,7 @@ struct LutEnvelope
 {
     float process(float delta_time)
     {
-        
+        // Instant increment.
         if (increment_[stage_] > 99999) {
             value_ = target_level_[0];
             setStage(stage_ + 1);
@@ -51,14 +51,6 @@ struct LutEnvelope
         target_level_[stage] = target_level;
         increment_[stage] = increment;
         shape_[stage] = shape;
-    }
-
-    void envelopeAntiPop(float level)
-    {
-        //           Stage  Level  Increment Shape
-        configureStage(0,   level, 100000.f, 1.0f);
-        configureStage(1,   0.0f,  200.f,    2.0f);
-        configureStage(2,   0.0f,  0.0f,     1.0f);
     }
 
     void envelopeAD(float attack, float decay, float attack_shape = 1.85f, float decay_shape = 2.99999f)
