@@ -31,27 +31,57 @@ inline float Hermite4pt3oX(float x0, float x1, float x2, float x3, float t)
     return (((((c3 * t) + c2) * t) + c1) * t) + c0;
 }
 
-/** interpolates an array `p` with index `x`.
+/** Double precission index `x`.
 The array at `p` must be at least length `floor(x) + 2`.
 */
-inline float interpolateHermite(const float* p, float x, int p_len) {
-    int x1 = floorf(x);
-    int x0 = clamp(x1 - 1, 0, x1);
-    int x2 = clamp(x1 + 1, 0, p_len-1);
-    int x3 = clamp(x2 + 1, 0, p_len-1);
-    float t = x - x1;
-
-    return Hermite4pt3oX(p[x0], p[x1], p[x2], p[x3], t);
+inline float interpolateLinearD(float* data, double index) {
+    int x1 = floor(index);
+    float t = index - x1;
+    return crossfade(data[x1], data[x1+1], t);
 }
 
-inline float interpolateBSpline(const float* p, float x, int p_len) {
-    int x1 = floorf(x);
-    int x0 = clamp(x1 - 1, 0, x1);
-    int x2 = clamp(x1 + 1, 0, p_len - 1);
-    int x3 = clamp(x2 + 1, 0, p_len - 1);
-    float t = x - x1;
+/** The array at `p` must be at least length `floor(x) + 3`.
+*/
+inline float InterpolateHermite(float* data, double index) {
+    int x1 = floor(index);
+    float t = index - x1;
+    return Hermite4pt3oX(data[x1 - 1], data[x1], data[x1 + 1], data[x1 + 2], t);
+}
 
-    return BSpline(p[x0], p[x1], p[x2], p[x3], t);
+/** The array at `p` must be at least length `floor(x) + 3`.
+*/
+inline float interpolateBSpline(const float* data, double index) {
+    int x1 = floor(index);
+    float t = index - x1;
+    return BSpline(data[x1 - 1], data[x1], data[x1 + 1], data[x1 + 2], t);
+}
+
+/** interpolates an array. Warps. */
+inline float interpolateLineard(float* data, double index, int dataLen) {
+    int x1 = floor(index);
+    int x2 = (x1 + 1) % dataLen;
+    float t = index - x1;
+    return crossfade(data[x1], data[x2], t);
+}
+
+/** interpolates an array. Warps. */
+inline float InterpolateHermite(float* data, double index, int dataLen) {
+    int x1 = (int)floor(index);
+    int x0 = (x1 < 1) ? dataLen - 1 : x1 - 1;
+    int x2 = (x1 + 1) % dataLen;
+    int x3 = (x2 + 1) % dataLen;
+    float t = index - x1;
+    return Hermite4pt3oX(data[x0], data[x1], data[x2], data[x3], t);
+}
+
+/** interpolates an array. Warps. */
+inline float interpolateBSpline(const float* data, double index, int dataLen) {
+    int x1 = (int)floor(index);
+    int x0 = (x1 < 1) ? dataLen - 1 : x1 - 1;
+    int x2 = (x1 + 1) % dataLen;
+    int x3 = (x2 + 1) % dataLen;
+    float t = index - x1;
+    return BSpline(data[x0], data[x1], data[x2], data[x3], t);
 }
 
 #endif
