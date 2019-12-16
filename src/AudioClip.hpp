@@ -6,85 +6,47 @@ struct AudioClip
 {
     AudioClip() {};
 
-    unsigned int getSampleCount() {
-        return left_channel_.size();
-    }
+    unsigned int getSampleCount() { return left_channel_.size(); }
 
-    unsigned int getChannelCount() {
-        return channels_;
-    }
+    unsigned int getChannelCount() { return channels_; }
 
-    unsigned int getSampleRate() {
-        return sampleRate_;
-    }
+    unsigned int getSampleRate() { return sampleRate_; }
 
-    bool isLoaded() {
-        return left_channel_.size() > 0;
-    }
+    bool isLoaded() { return left_channel_.size() > 0; }
 
-    float getSeconds() {
-        return (float)left_channel_.size() / (float)sampleRate_;
-    }
+    float getSeconds() { return (float)left_channel_.size() / (float)sampleRate_; }
 
-    float getDt() {
-        return dt_;
-    }
+    float getSampleTime() { return 1.0f / left_channel_.size(); }
 
-    inline float getSample(double index) {
-        int x1 = floorf(index);
-        return left_channel_[x1];
-    }
+    float* data() { return left_channel_.data(); }
+    
+    float* waveform() { return waveform_; }
 
-    inline float getSampleLinear(double index) {
-        int x1 = floorf(index);
-        int x2 = (x1 + 1) % left_channel_.size();
-        float t = index - x1;
-        return crossfade(left_channel_[x1], left_channel_[x2], t);
-    }
-
-    inline float getSampleHermite(double index) {
-        int x1 = floorf(index);
-        int x0 = clamp(x1 - 1, 0, x1);
-        int x2 = (x1 + 1) % left_channel_.size();
-        int x3 = (x2 + 1) % left_channel_.size();
-        float t = index - x1;
-        return Hermite4pt3oX(left_channel_[x0], left_channel_[x1], left_channel_[x2], left_channel_[x3], t);
-    }
-
-    inline float getSampleSpline(double index) {
-        int x1 = floorf(index);
-        int x0 = clamp(x1 - 1, 0, x1);
-        int x2 = (x1 + 1) % left_channel_.size();
-        int x3 = (x2 + 1) % left_channel_.size();
-        float t = index - x1;
-        return BSpline(left_channel_[x0], left_channel_[x1], left_channel_[x2], left_channel_[x3], t);
-    }
-    inline float getSample(double phase, Interpolations interpolation_mode) {
+    inline float getSamplePhase(double phase, Interpolations interpolation_mode) {
         double index = phase * getSampleCount();
-        return getSample(index, interpolation_mode, false);
+        return getSampleIndex(index, interpolation_mode);
     }
 
-    inline float getSample(double index, Interpolations interpolation_mode, bool reverse) {
+    inline float getSampleIndex(double index, Interpolations interpolation_mode) {
         switch (interpolation_mode) {
         case NONE:
-            return getSample(index);
+            return left_channel_[floor(index)];
             break;
         case LINEAR:
-            return getSampleLinear(index);
+            return interpolateLinearD(left_channel_.data(), index);
             break;
         case HERMITE:
-            return getSampleHermite(index);
+            return InterpolateHermite(left_channel_.data(), index, left_channel_.size());
             break;
         case BSPLINE:
-            return getSampleSpline(index);
+            return interpolateBSpline(left_channel_.data(), index);
             break;
         default:
-            return getSample(index);
+            return left_channel_[floor(index)];
         }
     }
 
     void calculateWaveform() {
-        dt_ = 1.0f / left_channel_.size();
         int pos = 0;
         int samplesPerSlice = floorf(left_channel_.size() / WAVEFORM_RESOLUTION);
         float max = 0;
@@ -148,7 +110,7 @@ struct AudioClip
 
         if (pSampleData == NULL)
             return;
-
+        
         left_channel_.clear();
 
         for (size_t i = 0; i < totalSampleCount; i += channels_)
@@ -200,15 +162,14 @@ struct AudioClip
         calculateWaveform();
     }
 
-    const unsigned int maxRecordSamples = 44100 * 10;
-    float waveform_[WAVEFORM_RESOLUTION] = {0, 0, 0, 0};
-
 private:
 
     std::vector<float> left_channel_;
     unsigned int channels_ = 0;
     unsigned int sampleRate_ = 0;
-    float dt_ = 1.0f / maxRecordSamples;
+
+    const unsigned int maxRecordSamples = 44100 * 10;
+    float waveform_[WAVEFORM_RESOLUTION] = {0, 0, 0, 0};
 
     // Used for waveform while recording
     int waveform_index_ = 0;
