@@ -13,7 +13,7 @@ struct AntipopFilter {
             return in;
         }
 
-        alpha_ += args.sampleTime * 1378.125f; // (args.sampleRate / 32);
+        alpha_ += args.sampleTime * 1500; //  (args.sampleRate / 32);
        
         filter_ += alpha_ * (in - filter_);
 
