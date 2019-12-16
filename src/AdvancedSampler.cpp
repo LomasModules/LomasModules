@@ -51,12 +51,11 @@ struct AdvancedSampler : Module {
         NUM_LIGHTS
     };
 
-    double read_position_ = 0;
+    double phase_ = 0;
     bool playing_ = false;
     bool low_cpu_ = false;
     bool looping_ = false;
     bool recording_ = false;
-    bool reset_envelope_ = false;
     bool hold_envelope_ = false;
     bool exponential_start_end_ = false;
     bool slice_ = false;
@@ -73,7 +72,7 @@ struct AdvancedSampler : Module {
     dsp::SampleRateConverter<2> src_vcv_;
     dsp::DoubleRingBuffer<dsp::Frame<2>, 256> output_buffer_;
 
-    Antipop antipop_;
+    AntipopFilter antipop_;
 
     AdvancedSampler() {
         config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
@@ -96,7 +95,7 @@ struct AdvancedSampler : Module {
         json_object_set_new(rootJ, "loop", json_boolean(looping_));
         json_object_set_new(rootJ, "hold_envelope", json_boolean(hold_envelope_));
         json_object_set_new(rootJ, "playing", json_boolean(playing_));
-        json_object_set_new(rootJ, "read_position", json_real(read_position_));
+        json_object_set_new(rootJ, "read_position", json_real(phase_));
         json_object_set_new(rootJ, "interpolation_mode", json_integer(interpolation_mode_));
         json_object_set_new(rootJ, "slice", json_boolean(slice_));
         return rootJ;
@@ -119,7 +118,7 @@ struct AdvancedSampler : Module {
 
         json_t *audio_indexJ = json_object_get(rootJ, "read_position");
         if (audio_indexJ)
-            read_position_ = (float)json_real_value(audio_indexJ);
+            phase_ = (float)json_real_value(audio_indexJ);
 
         json_t *interpolationJ = json_object_get(rootJ, "interpolation_mode");
         if (interpolationJ)
@@ -192,121 +191,53 @@ struct AdvancedSampler : Module {
             outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.0f : 0.0f);
         }
 
+        if (!playing_) {
+            outputs[AUDIO_OUTPUT].setVoltage(0);
+            outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10 : 0);
+        }
+
         SinglePass(args);
-
-        return;
-    }
-
-    void BufferedPass(const ProcessArgs &args) {
-        const int buffer_size = 16;
-        if (output_buffer_.empty()) {
-            float start_phase = getPhaseStart();
-            float end_phase = getPhaseEnd();
-            bool forward = end_phase >= start_phase;
-            float min_phase = std::min(start_phase, end_phase);
-            float max_phase = std::max(start_phase, end_phase);
-            int clip_index = getClipIndex();
-
-            float tune = getParamModulated(TUNE_PARAM, 1.0f, -4.0f, 4.0f);
-            if (args.sampleRate != clip_cache_[clip_index].getSampleRate())
-                tune += log2f(clip_cache_[clip_index].getSampleRate() * args.sampleTime);
-            float freq = dsp::approxExp2_taylor5((tune) + 20) / 1048576 * clip_cache_[clip_index].getDt();
-
-            dsp::Frame<2> input_buffer[buffer_size];
-            for (int i = 0; i < buffer_size; i++) {
-                // Advance read position.
-                read_position_ += forward ? freq : -freq;
-
-                // Warp & stop.
-                bool last_sample = (forward && read_position_ >= max_phase) || (!forward && read_position_ < min_phase);
-                if (last_sample && playing_) {
-                    playing_ = looping_;
-                    read_position_ = getPhaseStart();
-                    eoc_pulse_.trigger(clip_cache_[clip_index].getSampleRate() / 1000.0f);
-                }
-
-
-                float clip_sample = playing_
-                                    ? clip_cache_[clip_index].getSample(read_position_, interpolation_mode_)
-                                    : 0;
-
-                // Amp envelope.
-                const float attack = getParamModulated(ATTACK_PARAM, 0.1f);
-                const float decay = getParamModulated(DECAY_PARAM, 0.1f);
-
-                if (hold_envelope_)
-                    env_.envelopeHD(attack, decay); // Hold & Decay
-                else
-                    env_.envelopeAD(attack, decay); // Attack & Decay
-
-                float audio_out = clip_sample * env_.process(args.sampleTime);
-
-                // Fill audio & eoc buffers.
-                input_buffer[i].samples[0] = audio_out + antipop_.process(args.sampleTime, audio_out);
-                input_buffer[i].samples[1] = eoc_pulse_.process(1.0f) ? 10.0f : 0.0f;
-
-            }
-            if (low_cpu_) {
-                for (int i = 0; i < buffer_size; i++) {
-                    output_buffer_.push(input_buffer[i]);
-                }
-            }
-            else {
-                // Sample rate conversion.
-                src_vcv_.setRates(clip_cache_[getClipIndex()].getSampleRate(), args.sampleRate);
-                int inLen = buffer_size;
-                int outLen = output_buffer_.capacity();
-                src_vcv_.process(input_buffer, &inLen, output_buffer_.endData(), &outLen);
-                output_buffer_.endIncr(outLen);
-            }
-        }
-
-        // Read from src buffer
-        if (!output_buffer_.empty()) {
-            // Get frame from src buffer.
-            dsp::Frame<2> frame = output_buffer_.shift();
-
-            // Set module outputs.
-            outputs[AUDIO_OUTPUT].setVoltage(frame.samples[0] * 5);
-            outputs[EOC_OUTPUT].setVoltage(frame.samples[1]);
-        }
     }
 
     void SinglePass(const ProcessArgs &args) {
-        if (!playing_)
-            return;
-  
+
+        if (!playing_) {
+            outputs[AUDIO_OUTPUT].setVoltage(0);
+            outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10 : 0);
+        }
+
         int clip_index = getClipIndex();
+        int clip_samplerate = clip_cache_[clip_index].getSampleRate();
 
         // Calculate pitch.
-        float tune = getParamModulated(TUNE_PARAM, 1.0f, -4.0f, 4.0f);
+        float octave = getParamModulated(TUNE_PARAM, 1.0f, -4.0f, 4.0f);
         
         // Cheap SR conversion.
-        if (args.sampleRate != clip_cache_[clip_index].getSampleRate())
-            tune += log2f(clip_cache_[clip_index].getSampleRate() * args.sampleTime);
+        if (args.sampleRate != clip_samplerate)
+            octave += log2f(clip_samplerate * args.sampleTime);
         
         // Calculate increment
-        float freq = dsp::approxExp2_taylor5((tune) + 20) / 1048576 * clip_cache_[clip_index].getDt();
+        float freq = dsp::approxExp2_taylor5((octave) + 20) / 1048576 * clip_cache_[clip_index].getSampleTime();
 
         // Move read position.
         float start_phase = getPhaseStart();
         float end_phase = getPhaseEnd();
         bool forward = end_phase >= start_phase;
-        read_position_ += forward ? freq : -freq;
+        phase_ += forward ? freq : -freq;
 
-        // Warp at start & end & stop.
+        // Warp at start & end or stop.
         float min_phase = std::min(start_phase, end_phase);
         float max_phase = std::max(start_phase, end_phase);
-        bool last_sample = (forward && read_position_ >= max_phase) || (!forward && read_position_ < min_phase);
+        bool last_sample = (forward && phase_ >= max_phase) || (!forward && phase_ < min_phase);
         if (last_sample && playing_) {
             playing_ = looping_;
-            read_position_ = getPhaseStart();
-            eoc_pulse_.trigger(clip_cache_[clip_index].getSampleRate() / 1000.0f);
+            phase_ = start_phase;
+            eoc_pulse_.trigger();
         }
 
-        // Get clip audio.
+        // dont get audio when stoped this frame.
         float clip_sample = playing_
-                            ? clip_cache_[clip_index].getSample(read_position_, interpolation_mode_)
+                            ? clip_cache_[clip_index].getSamplePhase(phase_, interpolation_mode_)
                             : 0;
 
         // Update amp envelope.
@@ -317,20 +248,22 @@ struct AdvancedSampler : Module {
             env_.envelopeHD(attack, decay); // Hold & Decay
         else
             env_.envelopeAD(attack, decay); // Attack & Decay
-
-        float audio_out = clip_sample * env_.process(args.sampleTime);
-        float antipop = antipop_.process(args.sampleTime, audio_out);
+        
+        float env_level = env_.process(args.sampleTime);
+        float filter_out = antipop_.process(clip_sample * env_level, args);
 
         // Set module outputs.
-        outputs[AUDIO_OUTPUT].setVoltage((audio_out + antipop) * 5);
+        outputs[AUDIO_OUTPUT].setVoltage(filter_out * 5);
         outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10 : 0);
     }
 
     inline void trigger() {
         playing_ = true;
-        env_.tigger(reset_envelope_);
-        read_position_ = getPhaseStart();
-        antipop_.trigger();
+        env_.tigger(true);
+        phase_ = getPhaseStart();
+        
+        if (playing_)
+            antipop_.trigger();
     }
 
     void startRecord(int sampleRate) {
@@ -343,6 +276,7 @@ struct AdvancedSampler : Module {
     }
 
     void stopRecord() {
+        recording_ = false;
         const std::string save_baseName = "Record";
         clip_names_[getClipIndex()] = save_baseName;
         clip_cache_[getClipIndex()].calculateWaveform();
@@ -389,7 +323,7 @@ struct AdvancedSampler : Module {
     }
 
     inline float getPhase() {
-        return read_position_;
+        return phase_;
     }
 
     inline int getClipIndex() {
@@ -402,7 +336,7 @@ struct AdvancedSampler : Module {
     }
 
     inline float* getClipWaveform() {
-        return clip_cache_[getClipIndex()].waveform_;
+        return clip_cache_[getClipIndex()].waveform();
     }
 
     void trimSample() {
@@ -661,45 +595,45 @@ struct AdvancedSamplerWidget : ModuleWidget
         addChild(createWidget<ScrewBlack>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
         addChild(createWidget<ScrewBlack>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
 
-        addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(19.304, 35.271)), module, AdvancedSampler::PLAY_PARAM));
-        addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(31.496, 35.316)), module, AdvancedSampler::LOOP_PARAM));
-        addParam(createParamCentered<RubberSmallButton>(mm2px(Vec(43.688, 35.326)), module, AdvancedSampler::REC_PARAM));
-        addParam(createParamCentered<LoadButton>(mm2px(Vec(7.112, 35.331)), module, AdvancedSampler::LOAD_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(9.144, 50.603)), module, AdvancedSampler::SAMPLE_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(25.4, 50.603)), module, AdvancedSampler::START_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(41.656, 50.603)), module, AdvancedSampler::END_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(9.144, 69.142)), module, AdvancedSampler::TUNE_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(25.4, 69.142)), module, AdvancedSampler::ATTACK_PARAM));
-        addParam(createParamCentered<RoundGrayKnob>(mm2px(Vec(41.656, 69.142)), module, AdvancedSampler::DECAY_PARAM));
+        addParam(createParamCentered<LoadButton>(        mm2px(Vec(6.64, 15.47)), module, AdvancedSampler::LOAD_PARAM));
+        addParam(createParamCentered<RubberSmallButton>( mm2px(Vec(19.147, 15.47)), module, AdvancedSampler::PLAY_PARAM));
+        addParam(createParamCentered<RubberSmallButton>( mm2px(Vec(31.653, 15.47)), module, AdvancedSampler::LOOP_PARAM));
+        addParam(createParamCentered<RubberSmallButton>( mm2px(Vec(44.16, 15.47)), module, AdvancedSampler::REC_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(     mm2px(Vec(9.562, 48.49)),  module, AdvancedSampler::SAMPLE_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(     mm2px(Vec(25.475, 48.49)),   module, AdvancedSampler::START_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(     mm2px(Vec(41.387, 48.49)), module, AdvancedSampler::END_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(     mm2px(Vec(9.562, 67.54)),  module, AdvancedSampler::TUNE_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(     mm2px(Vec(25.475, 67.54)),   module, AdvancedSampler::ATTACK_PARAM));
+        addParam(createParamCentered<RoundGrayKnob>(     mm2px(Vec(41.387, 67.54)), module, AdvancedSampler::DECAY_PARAM));
 
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.688, 85.611)), module, AdvancedSampler::END_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.304, 85.659)), module, AdvancedSampler::SAMPLE_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.496, 85.659)), module, AdvancedSampler::START_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.112, 85.661)), module, AdvancedSampler::PLAY_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.688, 100.163)), module, AdvancedSampler::DECAY_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.304, 100.174)), module, AdvancedSampler::TUNE_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.496, 100.189)), module, AdvancedSampler::ATTACK_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.112, 100.217)), module, AdvancedSampler::REC_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.208, 114.713)), module, AdvancedSampler::AUDIO_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.76,  84.07)),  module, AdvancedSampler::REC_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.52, 84.07)), module, AdvancedSampler::SAMPLE_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.28, 84.07)), module, AdvancedSampler::START_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.04, 84.07)), module, AdvancedSampler::END_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.76,  98.03)),  module, AdvancedSampler::AUDIO_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.52, 98.03)), module, AdvancedSampler::TUNE_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.28, 98.03)), module, AdvancedSampler::ATTACK_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.04, 98.03)), module, AdvancedSampler::DECAY_INPUT));
+        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.7,  111.99)), module, AdvancedSampler::PLAY_INPUT));
 
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(37.592, 114.715)), module, AdvancedSampler::EOC_OUTPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(25.4, 114.72)), module, AdvancedSampler::AUDIO_OUTPUT));
-
-        // Leds
-        if (module) {
-            addChild(createLightCentered<RubberSmallButtonLed<BlueLight>>(mm2px( Vec(19.304, 35.271)), module, AdvancedSampler::PLAY_LIGHT));
-            addChild(createLightCentered<RubberSmallButtonLed<BlueLight>>(mm2px( Vec(43.688, 35.326)), module, AdvancedSampler::REC_LIGHT_RED));
-            addChild(createLightCentered<RubberSmallButtonLed<BlueLight>> (mm2px(Vec(31.496, 35.316)), module, AdvancedSampler::LOOP_LIGHT));
-        }
-
+        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(25.4, 111.99)), module, AdvancedSampler::AUDIO_OUTPUT));
+        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(40.1, 111.99)), module, AdvancedSampler::EOC_OUTPUT));
+        
         // Display
         {
             SamplerDisplay *display = new SamplerDisplay();
-            display->box.size = mm2px(Vec(44.704, 15.24));
-            display->box.pos = mm2px(Vec(3.048, 10.635));
+            display->box.size = mm2px(Vec(43.18, 16.51));
+            display->box.pos = mm2px(Vec(3.81, 19.915));
             display->module = module;
             addChild(display);
         }
+
+        if (!module)
+            return;
+
+        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(19.147, 15.47)), module, AdvancedSampler::PLAY_LIGHT));
+        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(31.653, 15.47)), module, AdvancedSampler::LOOP_LIGHT));
+        addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec( 44.16, 15.47)), module, AdvancedSampler::REC_LIGHT_RED));
     }
 
     void appendContextMenu(Menu *menu) override
