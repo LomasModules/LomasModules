@@ -1,4 +1,7 @@
 
+#ifndef INTERPOLATIONS_H
+#define INTERPOLATIONS_H
+
 enum Interpolations
 {
     NONE,
@@ -50,3 +53,5 @@ inline float interpolateBSpline(const float* p, float x, int p_len) {
 
     return BSpline(p[x0], p[x1], p[x2], p[x3], t);
 }
+
+#endif
