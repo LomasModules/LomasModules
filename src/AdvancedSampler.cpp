@@ -151,12 +151,11 @@ struct AdvancedSampler : Module {
             lights[REC_LIGHT_RED].setSmoothBrightness(recording_ ? .5f : 0.0f, UI_update_time);
         }
 
-        // Rec button
+        // Rec button & CV
         if (inputs[AUDIO_INPUT].isConnected())
             if (rec_button_trigger_.process(params[REC_PARAM].getValue()))
                 switchRec(args.sampleRate);
 
-        // Rec input trigger.
         if (inputs[AUDIO_INPUT].isConnected())
             if (rec_trigger_.process(inputs[REC_INPUT].getVoltage()))
                 switchRec(args.sampleRate);
@@ -189,22 +188,13 @@ struct AdvancedSampler : Module {
         if (!playing_) {
             outputs[AUDIO_OUTPUT].setVoltage(0);
             outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10.0f : 0.0f);
-        }
-
-        if (!playing_) {
-            outputs[AUDIO_OUTPUT].setVoltage(0);
-            outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10 : 0);
+            return;
         }
 
         SinglePass(args);
     }
-
-    void SinglePass(const ProcessArgs &args) {
-
-        if (!playing_) {
-            outputs[AUDIO_OUTPUT].setVoltage(0);
-            outputs[EOC_OUTPUT].setVoltage(eoc_pulse_.process(args.sampleTime) ? 10 : 0);
-        }
+    
+    inline void SinglePass(const ProcessArgs &args) {
 
         int clip_index = getClipIndex();
         int clip_samplerate = clip_cache_[clip_index].getSampleRate();
@@ -606,18 +596,18 @@ struct AdvancedSamplerWidget : ModuleWidget
         addParam(createParamCentered<RoundGrayKnob>(     mm2px(Vec(25.475, 67.54)),   module, AdvancedSampler::ATTACK_PARAM));
         addParam(createParamCentered<RoundGrayKnob>(     mm2px(Vec(41.387, 67.54)), module, AdvancedSampler::DECAY_PARAM));
 
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.76,  84.07)),  module, AdvancedSampler::REC_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.52, 84.07)), module, AdvancedSampler::SAMPLE_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.28, 84.07)), module, AdvancedSampler::START_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.04, 84.07)), module, AdvancedSampler::END_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.76,  98.03)),  module, AdvancedSampler::AUDIO_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.52, 98.03)), module, AdvancedSampler::TUNE_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.28, 98.03)), module, AdvancedSampler::ATTACK_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.04, 98.03)), module, AdvancedSampler::DECAY_INPUT));
-        addInput(createInputCentered<PJ301MPort>(mm2px(Vec(10.7,  111.99)), module, AdvancedSampler::PLAY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.52, 84.07)), module, AdvancedSampler::START_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.28, 84.07)), module, AdvancedSampler::END_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.04, 84.07)), module, AdvancedSampler::REC_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.76, 84.089)), module, AdvancedSampler::SAMPLE_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(7.76, 98.03)), module, AdvancedSampler::TUNE_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(19.52, 98.03)), module, AdvancedSampler::ATTACK_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(31.28, 98.03)), module, AdvancedSampler::DECAY_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(43.04, 98.03)), module, AdvancedSampler::AUDIO_INPUT));
+		addInput(createInputCentered<PJ301MPort>(mm2px(Vec(13.64, 111.99)), module, AdvancedSampler::PLAY_INPUT));
 
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(25.4, 111.99)), module, AdvancedSampler::AUDIO_OUTPUT));
-        addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(40.1, 111.99)), module, AdvancedSampler::EOC_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(25.4, 111.99)), module, AdvancedSampler::AUDIO_OUTPUT));
+		addOutput(createOutputCentered<PJ301MPort>(mm2px(Vec(37.16, 111.99)), module, AdvancedSampler::EOC_OUTPUT));
         
         // Display
         {
