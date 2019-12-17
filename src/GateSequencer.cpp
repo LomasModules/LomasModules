@@ -74,22 +74,8 @@ struct GateSequencer : Module
 		configParam(PAGE_PARAM + 2, 0.f, 1.f, 0.f, "Page 3");
 		configParam(PAGE_PARAM + 3, 0.f, 1.f, 0.f, "Page 4");
 
-		configParam(GRID_PARAM + 0, 0.f, 1.f, 0.f, "Step 1");
-		configParam(GRID_PARAM + 1, 0.f, 1.f, 0.f, "Step 2");
-		configParam(GRID_PARAM + 2, 0.f, 1.f, 0.f, "Step 3");
-		configParam(GRID_PARAM + 3, 0.f, 1.f, 0.f, "Step 4");
-		configParam(GRID_PARAM + 4, 0.f, 1.f, 0.f, "Step 5");
-		configParam(GRID_PARAM + 5, 0.f, 1.f, 0.f, "Step 6");
-		configParam(GRID_PARAM + 6, 0.f, 1.f, 0.f, "Step 7");
-		configParam(GRID_PARAM + 7, 0.f, 1.f, 0.f, "Step 8");
-		configParam(GRID_PARAM + 8, 0.f, 1.f, 0.f, "Step 9");
-		configParam(GRID_PARAM + 9, 0.f, 1.f, 0.f, "Step 10");
-		configParam(GRID_PARAM + 10, 0.f, 1.f, 0.f, "Step 11");
-		configParam(GRID_PARAM + 11, 0.f, 1.f, 0.f, "Step 12");
-		configParam(GRID_PARAM + 12, 0.f, 1.f, 0.f, "Step 13");
-		configParam(GRID_PARAM + 13, 0.f, 1.f, 0.f, "Step 14");
-		configParam(GRID_PARAM + 14, 0.f, 1.f, 0.f, "Step 15");
-		configParam(GRID_PARAM + 15, 0.f, 1.f, 0.f, "Step 16");
+        for (size_t i = 0; i < 16; i++) 
+            configParam(GRID_PARAM + i, 0.f, 1.f, 0.f, "Step");
 
 		configParam(PATTERN_PARAM + 0, 0.f, 1.f, 0.f, "Pattern 1");
 		configParam(PATTERN_PARAM + 1, 0.f, 1.f, 0.f, "Pattern 2");
@@ -180,10 +166,8 @@ struct GateSequencer : Module
 			float *gateMessage = (float *)leftExpander.consumerMessage;
 
 			// Read message
-			beat_counter_ = gateMessage[0];
-			gate_in = (gateMessage[1] > 0.0f);
-			next_pattern_index_ = gateMessage[2];
-			pattern_index_ = gateMessage[3];
+            setBeat(gateMessage[0]);
+            gate_in = (gateMessage[1] > 0.0f);
 		}
 
 		if (is_mother)
@@ -193,8 +177,6 @@ struct GateSequencer : Module
 			// Write message
 			gateMessage[0] = beat_counter_;
 			gateMessage[1] = gate_in ? 1 : 0;
-			gateMessage[2] = next_pattern_index_;
-			gateMessage[3] = pattern_index_;
 
 			// Flip messages at the end of the timestep
 			rightExpander.module->leftExpander.messageFlipRequested = true;
