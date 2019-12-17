@@ -91,25 +91,20 @@ struct GateSequencer : Module
 		leftExpander.consumerMessage = leftMessages[1];
 	}
 
-	void onReset() override
-	{
-		for (size_t i = 0; i < MAX_PATTERN_LEN * PATTERNS; i++)
-		{
+	void onReset() override {
+		for (size_t i = 0; i < MAX_PATTERN_LEN * PATTERNS; i++)	{
 			gates[i] = false;
 		}
-		for (size_t i = 0; i < PATTERNS; i++)
-		{
+		for (size_t i = 0; i < PATTERNS; i++) {
 			pattern_len_[i] = 15;
 		}	
 	}
 
-	int SequenceIndex()
-	{
+	int SequenceIndex()	{
 		return beat_counter_ % (pattern_len_[pattern_index_] + 1);
 	}
 
-	void setBeat(int newBeat)
-	{
+	void setBeat(int newBeat) {
 		beat_counter_ = newBeat;
 
 		if (beat_counter_ % global_quatization_ == 0)
@@ -122,35 +117,26 @@ struct GateSequencer : Module
 		const bool is_child = leftExpander.module && leftExpander.module->model == modelGateSequencer;
 		bool gate_in = false;
 
-		if (!is_child)
-		{
-			// INPUTS
-			if (inputs[RESET_INPUT].isConnected())
-			{
-				if (reset_trigger_.process(inputs[RESET_INPUT].getVoltage()))
-				{
-					if (reset_mode_index_ == (int)INSTANT)
-					{
+		// Master sequencer.
+		if (!is_child) {
+			// Inputs
+			if (inputs[RESET_INPUT].isConnected()) {
+				if (reset_trigger_.process(inputs[RESET_INPUT].getVoltage())) {
+					reset_timer_.reset();
+					if (reset_mode_index_ == (int)INSTANT) {
 						setBeat(0);
 					}
-					else
-					{
+					else {
 						reset_next_step_ = true;
 					}
-
-					reset_timer_.reset();
 				}
 			}
 
-			if (inputs[CLOCK_INPUT].isConnected())
-			{
-				if (clock_tiggrer_.process(inputs[CLOCK_INPUT].getVoltage()))
-				{
-					if (reset_timer_.time > 1e-3f)
-					{
+			if (inputs[CLOCK_INPUT].isConnected()) {
+				if (clock_tiggrer_.process(inputs[CLOCK_INPUT].getVoltage())) {
+					if (reset_timer_.time > 1e-3f) {
 						int nextBeat = beat_counter_ + 1;
-						if (reset_next_step_)
-						{
+						if (reset_next_step_) {
 							nextBeat = 0;
 							reset_next_step_ = false;
 						}
@@ -161,8 +147,8 @@ struct GateSequencer : Module
 			}
 		}
 
-		if (is_child)
-		{
+		// Read message from left.
+		if (is_child) {
 			float *gateMessage = (float *)leftExpander.consumerMessage;
 
 			// Read message
@@ -170,8 +156,8 @@ struct GateSequencer : Module
             gate_in = (gateMessage[1] > 0.0f);
 		}
 
-		if (is_mother)
-		{
+		// Propagate to rigth.
+		if (is_mother) {
 			float *gateMessage = (float *)rightExpander.module->leftExpander.producerMessage;
 
 			// Write message
