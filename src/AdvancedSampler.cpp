@@ -621,9 +621,9 @@ struct AdvancedSamplerWidget : ModuleWidget
         if (!module)
             return;
 
-        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(19.147, 15.47)), module, AdvancedSampler::PLAY_LIGHT));
-        addChild(createLightCentered<MediumLight<BlueLight>>(mm2px(Vec(31.653, 15.47)), module, AdvancedSampler::LOOP_LIGHT));
-        addChild(createLightCentered<MediumLight<RedLight>>(mm2px(Vec( 44.16, 15.47)), module, AdvancedSampler::REC_LIGHT_RED));
+        addChild(createLightCentered<RubberSmallButtonLed<BlueLight>>(mm2px(Vec(19.147, 15.47)), module, AdvancedSampler::PLAY_LIGHT));
+        addChild(createLightCentered<RubberSmallButtonLed<BlueLight>>(mm2px(Vec(31.653, 15.47)), module, AdvancedSampler::LOOP_LIGHT));
+        addChild(createLightCentered<RubberSmallButtonLed<RedLight>>(mm2px(Vec( 44.16, 15.47)), module, AdvancedSampler::REC_LIGHT_RED));
     }
 
     void appendContextMenu(Menu *menu) override
