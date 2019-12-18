@@ -152,8 +152,10 @@ struct GateSequencer : Module
 			float *gateMessage = (float *)leftExpander.consumerMessage;
 
 			// Read message
-            setBeat(gateMessage[0]);
-            gate_in = (gateMessage[1] > 0.0f);
+            beat_counter_ = gateMessage[0];
+			gate_in = (gateMessage[1] > 0.0f);
+			next_pattern_index_ = gateMessage[2];
+			pattern_index_ = gateMessage[3];
 		}
 
 		// Propagate to rigth.
@@ -163,6 +165,8 @@ struct GateSequencer : Module
 			// Write message
 			gateMessage[0] = beat_counter_;
 			gateMessage[1] = gate_in ? 1 : 0;
+			gateMessage[2] = next_pattern_index_;
+			gateMessage[3] = pattern_index_;
 
 			// Flip messages at the end of the timestep
 			rightExpander.module->leftExpander.messageFlipRequested = true;
