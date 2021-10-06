@@ -47,7 +47,7 @@ struct RubberButtonLed : BASE
 	{
 		this->borderColor = color::BLACK_TRANSPARENT;
 		this->bgColor = color::BLACK_TRANSPARENT;
-		this->box.size = app::mm2px(math::Vec(8, 8));
+		this->box.size = window::mm2px(math::Vec(8, 8));
 	}
 };
 
@@ -58,7 +58,7 @@ struct RubberSmallButtonLed : BASE
 	{
 		this->borderColor = color::BLACK_TRANSPARENT;
 		this->bgColor = color::BLACK_TRANSPARENT;
-		this->box.size = app::mm2px(math::Vec(5, 5));
+		this->box.size = window::mm2px(math::Vec(5, 5));
 	}
 };
 
