@@ -139,9 +139,6 @@ struct AdvancedSampler : Module {
 
     void process(const ProcessArgs &args) override {
 
-        if (!clip_cache_[getClipIndex()].isLoaded())
-            return;
-
         // Update lights
         light_timer_.process(args.sampleTime);
         if (light_timer_.process(args.sampleTime) > UI_update_time) {
@@ -174,12 +171,14 @@ struct AdvancedSampler : Module {
         }
 
         // Play button & cv.
-        if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
-            trigger();
-
-        if (inputs[PLAY_INPUT].isConnected())
-            if (play_trigger.process(inputs[PLAY_INPUT].getVoltage()))
+        if (clip_cache_[getClipIndex()].isLoaded()) {
+            if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
                 trigger();
+
+            if (inputs[PLAY_INPUT].isConnected())
+                if (play_trigger.process(inputs[PLAY_INPUT].getVoltage()))
+                    trigger();
+        }
 
         // Loop button & cv.
         if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
