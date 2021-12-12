@@ -358,7 +358,7 @@ struct AdvancedSampler : Module {
     }
 
     void setPath(std::string path, bool force_reload) {
-        const std::string directory = string::directory(path);
+        const std::string directory = system::getDirectory(path);
         setDirectory(directory, force_reload);
     }
 
@@ -398,10 +398,10 @@ struct AdvancedSampler : Module {
                 }
                 if (found != std::string::npos) {
                     if (clip_count_ < MAX_FILES) {
-                        std::string clip_long_name = string::filenameBase(fileName);
+                        std::string clip_long_name = system::getStem(system::getFilename(fileName));
                         std::string clip_short_name = shorten_string(clip_long_name);
                         std::string clip_path = directory + "/" + clip_long_name + ".wav";
-                        clip_cache_[clip_count_].load(clip_path);
+                         clip_cache_[clip_count_].load(clip_path);
                         clip_names_.push_back(clip_short_name);
                         clip_long_names_.push_back(clip_long_name);
                         clip_count_++;
@@ -432,7 +432,7 @@ static void selectPath(AdvancedSampler *module) {
     }
     else {
         dir = module->directory_;
-        filename = string::filename("Untitled");
+        filename = system::getFilename("Untitled");
     }
 
     char *path = osdialog_file(OSDIALOG_OPEN, dir.c_str(), filename.c_str(), NULL);
@@ -449,6 +449,7 @@ struct LoadButton : RubberSmallButton
     }
 
     void onDragEnd(const event::DragEnd &e) override {
+        ParamQuantity* paramQuantity = getParamQuantity();
         AdvancedSampler *module = dynamic_cast<AdvancedSampler *>(paramQuantity->module);
 
         if (module)
