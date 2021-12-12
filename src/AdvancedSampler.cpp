@@ -139,9 +139,6 @@ struct AdvancedSampler : Module {
 
     void process(const ProcessArgs &args) override {
 
-        if (!clip_cache_[getClipIndex()].isLoaded())
-            return;
-
         // Update lights
         light_timer_.process(args.sampleTime);
         if (light_timer_.process(args.sampleTime) > UI_update_time) {
@@ -174,12 +171,14 @@ struct AdvancedSampler : Module {
         }
 
         // Play button & cv.
-        if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
-            trigger();
-
-        if (inputs[PLAY_INPUT].isConnected())
-            if (play_trigger.process(inputs[PLAY_INPUT].getVoltage()))
+        if (clip_cache_[getClipIndex()].isLoaded()) {
+            if (play_button_trigger_.process(params[PLAY_PARAM].getValue()))
                 trigger();
+
+            if (inputs[PLAY_INPUT].isConnected())
+                if (play_trigger.process(inputs[PLAY_INPUT].getVoltage()))
+                    trigger();
+        }
 
         // Loop button & cv.
         if (loop_button_trigger_.process(params[LOOP_PARAM].getValue()))
@@ -462,10 +461,8 @@ struct LoadButton : RubberSmallButton
 struct SamplerDisplay : TransparentWidget
 {
     AdvancedSampler *module;
-    std::shared_ptr<Font> font;
 
     SamplerDisplay() {
-        font = APP->window->loadFont(asset::plugin(pluginInstance, "res/Fonts/FiraMono-Bold.ttf"));
     }
 
     void draw(const DrawArgs &args) override {
@@ -483,26 +480,28 @@ struct SamplerDisplay : TransparentWidget
         if (!module)
             return;
 
+        std::shared_ptr<Font> font = APP->window->loadFont(asset::plugin(pluginInstance, "res/Fonts/FiraMono-Bold.ttf"));
         float font_heigth = 6;
         float waveform_text_margin = 4;
         Vec screen_margin = Vec(4, 4);
+        if (font) {
+            const NVGcolor text_color = nvgRGB(44, 175, 210);
+            nvgFillColor(args.vg, text_color);
+            nvgFontSize(args.vg, 10);
+            nvgFontFaceId(args.vg, font->handle);
+            nvgTextLetterSpacing(args.vg, 1);
 
-        const NVGcolor text_color = nvgRGB(44, 175, 210);
-        nvgFillColor(args.vg, text_color);
-        nvgFontSize(args.vg, 10);
-        nvgFontFaceId(args.vg, font->handle);
-        nvgTextLetterSpacing(args.vg, 1);
+            // Clip name
+            nvgTextAlign(args.vg, NVG_ALIGN_LEFT);
+            const std::string clip_name = module->getClipName();
+            nvgText(args.vg, screen_margin.x, screen_margin.y + font_heigth, clip_name.c_str(), NULL);
 
-        // Clip name
-        nvgTextAlign(args.vg, NVG_ALIGN_LEFT);
-        const std::string clip_name = module->getClipName();
-        nvgText(args.vg, screen_margin.x, screen_margin.y + font_heigth, clip_name.c_str(), NULL);
-
-        // Clip number
-        nvgFontSize(args.vg, 10);
-        nvgTextAlign(args.vg, NVG_ALIGN_RIGHT);
-        const std::string clip_number = std::to_string(module->getClipIndex()) + "/" + std::to_string(module->clip_count_);
-        nvgText(args.vg, box.size.x - screen_margin.x, screen_margin.y + font_heigth, clip_number.c_str(), NULL);
+            // Clip number
+            nvgFontSize(args.vg, 10);
+            nvgTextAlign(args.vg, NVG_ALIGN_RIGHT);
+            const std::string clip_number = std::to_string(module->getClipIndex()) + "/" + std::to_string(module->clip_count_);
+            nvgText(args.vg, box.size.x - screen_margin.x, screen_margin.y + font_heigth, clip_number.c_str(), NULL);
+        }
 
         // Waveform
         const Vec waveform_size = Vec(box.size.x - screen_margin.x * 2, box.size.y - screen_margin.y * 2 - font_heigth - waveform_text_margin);
