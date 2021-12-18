@@ -421,6 +421,13 @@ struct AdvancedSampler : Module {
     }
 };
 
+static void pathSelected(AdvancedSampler *module, char* path) {
+    if (path) {
+        module->setPath(path, true);
+        free(path);
+    }
+}
+
 static void selectPath(AdvancedSampler *module) {
     std::string dir;
     std::string filename;
@@ -434,11 +441,14 @@ static void selectPath(AdvancedSampler *module) {
         filename = system::getFilename("Untitled");
     }
 
+#ifdef USING_CARDINAL_NOT_RACK
+    async_dialog_filebrowser(false, nullptr, dir.c_str(), "Load sample", [module](char* path) {
+        pathSelected(module, path);
+    });
+#else
     char *path = osdialog_file(OSDIALOG_OPEN, dir.c_str(), filename.c_str(), NULL);
-    if (path) {
-        module->setPath(path, true);
-        free(path);
-    }
+    pathSelected(module, path);
+#endif
 }
 
 struct LoadButton : RubberSmallButton
